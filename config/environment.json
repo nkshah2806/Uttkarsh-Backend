@@ -1,0 +1,11 @@
+{
+  "MONGO_URL": "mongodb+srv://nickshah403_db_user:MyMongo123@uttkarsh_db.zcjizyz.mongodb.net/?appName=Utkarsh",
+  "JWT_SECRET": "ba736843e34d1648161bfe584f80b2e665a70af793999a9d6def29cef1993dc2",
+  "PORT": "1990",
+  "HOST": "smtp.gmail.com",
+  "SECURE": true,
+  "SERVICE": "Gmail",
+  "emailPORT": 465,
+  "AUTHUSER": "b1aa02001@smtp-brevo.com",
+  "AUTHPASSWORD": "0jZr69GhLUBMxIkc"
+}

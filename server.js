@@ -1,32 +1,42 @@
 require("dotenv").config();
 
 const express = require("express");
+const cors = require("cors");
+const mongoose = require("mongoose");
+
+const userRoutes = require("./routes/userRoutes");
+
 const app = express();
 
-const DEFAULT_PORT = 5000;
-let port = Number(process.env.PORT) || DEFAULT_PORT;
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
+// Routes
 app.get("/", (req, res) => {
-  res.send("hello backend");
+  res.send("Hello Backend");
 });
 
-function startServer(p) {
-  const server = app.listen(p, () => {
-    console.log(`Server running on port ${p}`);
-  });
+app.use("/api/user", userRoutes);
 
-  server.on('error', (err) => {
-    if (err && err.code === 'EADDRINUSE') {
-      const nextPort = p + 1;
-      console.warn(`Port ${p} in use — trying ${nextPort}`);
-      // Try next port once
-      startServer(nextPort);
-    } else {
-      console.error('Server error:', err);
-    }
-  });
+// MongoDB Connection
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URL);
 
-  return server;
-}
+    console.log("✅ MongoDB Connected");
 
-startServer(port);
+    const PORT = process.env.PORT || 5000;
+
+    app.listen(PORT, () => {
+      console.log(`✅ Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("❌ MongoDB Connection Error:");
+    console.error(error.message);
+    process.exit(1);
+  }
+};
+
+connectDB();
