@@ -1,12 +1,26 @@
 const mongoose = require("mongoose");
+const { Types } = mongoose;
 const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
-    name: {
+    firstname: {
       type: String,
       required: true,
       trim: true,
+    },
+    lastname: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    gender: {
+      type: String,
+      required: false,
+    },
+    birthDate: {
+      type: Date,
+      required: false,
     },
     email: {
       type: String,
@@ -20,19 +34,61 @@ const userSchema = new mongoose.Schema(
       required: true,
       minlength: 6,
     },
-    role: {
+    phoneNumber: {
       type: String,
-      enum: ["user", "admin"],
-      default: "user",
+      required: true,
+      match: [/^\d{10}$/, "Phone number must be exactly 10 digits"],
     },
-    phone: {
+    image: {
       type: String,
-      trim: true,
+      required: false,
     },
-    status: {
+    deviceId: {
       type: String,
-      enum: ["active", "inactive"],
-      default: "active",
+      default: "",
+    },
+    deviceName: {
+      type: String,
+      default: "",
+    },
+    fcmToken: {
+      type: String,
+      default: "",
+    },
+    isAdmin: {
+      type: Boolean,
+      default: false,
+    },
+    jwtToken: {
+      type: String,
+      default: "",
+      required: false,
+    },
+    otp: {
+      type: String,
+      default: "",
+    },
+    otpExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    createdBy: {
+      type: Types.ObjectId,
+    },
+    updatedBy: {
+      type: Types.ObjectId,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    age: {
+      type: Number,
+      default: null,
     },
   },
   { timestamps: true }

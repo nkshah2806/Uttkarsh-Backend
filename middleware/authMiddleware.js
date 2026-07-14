@@ -39,14 +39,14 @@ exports.protect = async (req, res, next) => {
 };
 
 exports.adminOnly = (req, res, next) => {
-  if (!req.user || req.user.role !== "admin") {
+  if (!req.user || !req.user.isAdmin) {
     return res.status(403).json({
       success: false,
       message: "Admin access required",
     });
   }
 
-  if (req.user.status !== "active") {
+  if (!req.user.isActive) {
     return res.status(403).json({
       success: false,
       message: "Admin account is inactive",

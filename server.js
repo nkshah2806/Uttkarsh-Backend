@@ -24,7 +24,7 @@ app.use("/api/auth", userRoutes);
 
 const ensureDefaultAdmin = async () => {
   try {
-    const existingAdmin = await User.findOne({ role: "admin" });
+    const existingAdmin = await User.findOne({ isAdmin: true });
 
     if (existingAdmin) {
       return;
@@ -34,11 +34,13 @@ const ensureDefaultAdmin = async () => {
     const adminPassword = process.env.ADMIN_PASSWORD || "admin123456";
 
     await User.create({
-      name: "Admin User",
+      firstname: "Admin",
+      lastname: "User",
       email: adminEmail,
       password: adminPassword,
-      role: "admin",
-      status: "active",
+      phoneNumber: process.env.ADMIN_PHONE || "0000000000",
+      isAdmin: true,
+      isActive: true,
     });
 
     console.log(`✅ Default admin created with email: ${adminEmail}`);

@@ -3,7 +3,7 @@ const User = require("../models/User");
 
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user._id, email: user.email, role: user.role },
+    { id: user._id, email: user.email, isAdmin: user.isAdmin },
     process.env.JWT_SECRET,
     { expiresIn: "1d" }
   );
@@ -42,13 +42,56 @@ exports.getMe = async (req, res) => {
 
 exports.createUser = async (req, res) => {
   try {
-    const { name, email, password, role, phone, status } = req.body;
+    const {
+      firstname,
+      lastname,
+      gender,
+      birthDate,
+      email,
+      password,
+      phoneNumber,
+      image,
+      deviceId,
+      deviceName,
+      fcmToken,
+      isAdmin,
+      jwtToken,
+      otp,
+      otpExpiresAt,
+      isVerified,
+      createdBy,
+      updatedBy,
+      isActive,
+      age,
+    } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: "Name, email, and password are required" });
+    if (!firstname || !email || !password || !phoneNumber) {
+      return res.status(400).json({ success: false, message: "firstname, email, password and phoneNumber are required" });
     }
 
-    const user = await User.create({ name, email, password, role, phone, status });
+    const user = await User.create({
+      firstname,
+      lastname,
+      gender,
+      birthDate,
+      email,
+      password,
+      phoneNumber,
+      image,
+      deviceId,
+      deviceName,
+      fcmToken,
+      isAdmin,
+      jwtToken,
+      otp,
+      otpExpiresAt,
+      isVerified,
+      createdBy,
+      updatedBy,
+      isActive,
+      age,
+    });
+
     const userResponse = user.toObject();
     delete userResponse.password;
 
@@ -64,8 +107,8 @@ exports.createUser = async (req, res) => {
 
 exports.loginAdmin = async (req, res) => {
   try {
-    const { email, password, emailOrPhone, phone } = req.body;
-    const loginIdentifier = emailOrPhone || email || phone;
+    const { email, password, emailOrPhone, phone, phoneNumber } = req.body;
+    const loginIdentifier = emailOrPhone || email || phone || phoneNumber;
 
     if (!loginIdentifier || !password) {
       return res.status(400).json({ success: false, message: "Email or phone and password are required" });
@@ -74,7 +117,7 @@ exports.loginAdmin = async (req, res) => {
     const user = await User.findOne({
       $or: [
         { email: String(loginIdentifier).toLowerCase() },
-        { phone: String(loginIdentifier) },
+        { phoneNumber: String(loginIdentifier) },
       ],
     }).select("+password");
 
@@ -82,11 +125,11 @@ exports.loginAdmin = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
 
-    if (user.role !== "admin") {
+    if (!user.isAdmin) {
       return res.status(403).json({ success: false, message: "Only admin users can login here" });
     }
 
-    if (user.status !== "active") {
+    if (!user.isActive) {
       return res.status(403).json({ success: false, message: "Admin account is inactive" });
     }
 
@@ -108,7 +151,7 @@ exports.loginAdmin = async (req, res) => {
       data: {
         ...userResponse,
         jwtToken: token,
-        isAdmin: user.role === "admin",
+        isAdmin: user.isAdmin,
       },
     });
   } catch (error) {
@@ -118,15 +161,33 @@ exports.loginAdmin = async (req, res) => {
 
 exports.updateUser = async (req, res) => {
   try {
-    const { name, email, password, role, phone, status } = req.body;
-    const updateData = {};
+    const updateFields = [
+      "firstname",
+      "lastname",
+      "gender",
+      "birthDate",
+      "email",
+      "password",
+      "phoneNumber",
+      "image",
+      "deviceId",
+      "deviceName",
+      "fcmToken",
+      "isAdmin",
+      "jwtToken",
+      "otp",
+      "otpExpiresAt",
+      "isVerified",
+      "createdBy",
+      "updatedBy",
+      "isActive",
+      "age",
+    ];
 
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (password) updateData.password = password;
-    if (role) updateData.role = role;
-    if (phone !== undefined) updateData.phone = phone;
-    if (status) updateData.status = status;
+    const updateData = {};
+    updateFields.forEach((f) => {
+      if (req.body[f] !== undefined) updateData[f] = req.body[f];
+    });
 
     const user = await User.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
