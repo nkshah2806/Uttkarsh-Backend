@@ -1,4 +1,13 @@
+const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user._id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "1d" }
+  );
+};
 
 exports.getUsers = async (req, res) => {
   try {
@@ -23,6 +32,14 @@ exports.getUserById = async (req, res) => {
   }
 };
 
+exports.getMe = async (req, res) => {
+  try {
+    res.status(200).json({ success: true, data: req.user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to fetch profile", error: error.message });
+  }
+};
+
 exports.createUser = async (req, res) => {
   try {
     const { name, email, password, role, phone, status } = req.body;
@@ -42,6 +59,60 @@ exports.createUser = async (req, res) => {
     }
 
     res.status(500).json({ success: false, message: "Failed to create user", error: error.message });
+  }
+};
+
+exports.loginAdmin = async (req, res) => {
+  try {
+    const { email, password, emailOrPhone, phone } = req.body;
+    const loginIdentifier = emailOrPhone || email || phone;
+
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({ success: false, message: "Email or phone and password are required" });
+    }
+
+    const user = await User.findOne({
+      $or: [
+        { email: String(loginIdentifier).toLowerCase() },
+        { phone: String(loginIdentifier) },
+      ],
+    }).select("+password");
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Invalid email or password" });
+    }
+
+    if (user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Only admin users can login here" });
+    }
+
+    if (user.status !== "active") {
+      return res.status(403).json({ success: false, message: "Admin account is inactive" });
+    }
+
+    const isMatch = await user.comparePassword(password);
+
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: "Invalid email or password" });
+    }
+
+    const token = generateToken(user);
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.status(200).json({
+      success: true,
+      message: "Admin login successful",
+      token,
+      jwtToken: token,
+      data: {
+        ...userResponse,
+        jwtToken: token,
+        isAdmin: user.role === "admin",
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Admin login failed", error: error.message });
   }
 };
 

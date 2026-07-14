@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 
+const User = require("./models/User");
 const userRoutes = require("./routes/userRoutes");
 
 const app = express();
@@ -19,6 +20,33 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/user", userRoutes);
+app.use("/api/auth", userRoutes);
+
+const ensureDefaultAdmin = async () => {
+  try {
+    const existingAdmin = await User.findOne({ role: "admin" });
+
+    if (existingAdmin) {
+      return;
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL || "admin@uttkarsh.com";
+    const adminPassword = process.env.ADMIN_PASSWORD || "admin123456";
+
+    await User.create({
+      name: "Admin User",
+      email: adminEmail,
+      password: adminPassword,
+      role: "admin",
+      status: "active",
+    });
+
+    console.log(`✅ Default admin created with email: ${adminEmail}`);
+  } catch (error) {
+    console.error("❌ Failed to create default admin:");
+    console.error(error.message);
+  }
+};
 
 // MongoDB Connection
 const connectDB = async () => {
@@ -26,6 +54,8 @@ const connectDB = async () => {
     await mongoose.connect(process.env.MONGO_URL);
 
     console.log("✅ MongoDB Connected");
+
+    await ensureDefaultAdmin();
 
     const PORT = process.env.PORT || 5000;
 
