@@ -52,11 +52,11 @@ const memberSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-memberSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+memberSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
 
   this.password = await bcrypt.hash(this.password, 10);
-  next();
+
 });
 
 memberSchema.methods.comparePassword = async function (candidatePassword) {
