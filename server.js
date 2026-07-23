@@ -7,12 +7,19 @@ Object.entries(envConfig).forEach(([key, value]) => {
 
 require("dotenv").config();
 
+process.env.JWT_SECRET = process.env.JWT_SECRET || "default-jwt-secret";
+process.env.MEMBER_JWT_SECRET = process.env.MEMBER_JWT_SECRET || "member-jwt-secret";
+process.env.ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || "admin-jwt-secret";
+
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 
 const User = require("./models/User");
+const Admin = require("./models/Admin");
 const userRoutes = require("./routes/userRoutes");
+const memberRoutes = require("./routes/memberRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 const app = express();
 
@@ -28,11 +35,12 @@ app.get("/", (req, res) => {
 
 app.use("/api/user", userRoutes);
 app.use("/api/auth", userRoutes);
+app.use("/api/members", memberRoutes);
+app.use("/api/admin", adminRoutes);
 
 const ensureDefaultAdmin = async () => {
   try {
-    const existingAdmin = await User.findOne({ isAdmin: true });
-
+    const existingAdmin = await Admin.findOne({ username: "admin" });
     if (existingAdmin) {
       return;
     }
@@ -40,14 +48,10 @@ const ensureDefaultAdmin = async () => {
     const adminEmail = process.env.ADMIN_EMAIL || "admin@uttkarsh.com";
     const adminPassword = process.env.ADMIN_PASSWORD || "admin123456";
 
-    await User.create({
-      firstname: "Admin",
-      lastname: "User",
+    await Admin.create({
+      username: "admin",
       email: adminEmail,
       password: adminPassword,
-      phoneNumber: process.env.ADMIN_PHONE || "0000000000",
-      isAdmin: true,
-      isActive: true,
     });
 
     console.log(`✅ Default admin created with email: ${adminEmail}`);
