@@ -9,6 +9,23 @@ const generateToken = (user) => {
   );
 };
 
+const normalizeUserForResponse = (user, token) => {
+  const userResponse = user.toObject ? user.toObject() : { ...user };
+  delete userResponse.password;
+
+  const fullName = [userResponse.firstname, userResponse.lastname]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return {
+    ...userResponse,
+    name: fullName || userResponse.email || "User",
+    role: userResponse.isAdmin ? "admin" : "member",
+    jwtToken: userResponse.jwtToken || token || "",
+  };
+};
+
 exports.getUsers = async (req, res) => {
   try {
     const user = await User.find().select("-password");
@@ -34,7 +51,7 @@ exports.getUserById = async (req, res) => {
 
 exports.getMe = async (req, res) => {
   try {
-    res.status(200).json({ success: true, data: req.user });
+    res.status(200).json({ success: true, data: normalizeUserForResponse(req.user) });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to fetch profile", error: error.message });
   }
@@ -92,8 +109,7 @@ exports.createUser = async (req, res) => {
       age,
     });
 
-    const userResponse = user.toObject();
-    delete userResponse.password;
+    const userResponse = normalizeUserForResponse(user);
 
     res.status(201).json({ success: true, data: userResponse });
   } catch (error) {
@@ -105,7 +121,52 @@ exports.createUser = async (req, res) => {
   }
 };
 
-exports.loginAdmin = async (req, res) => {
+exports.registerUser = async (req, res) => {
+  try {
+    const { name, firstname, lastname, email, password, phone, phoneNumber, isAdmin, isActive } = req.body;
+
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedPassword = String(password || "").trim();
+
+    if (!normalizedEmail || !normalizedPassword) {
+      return res.status(400).json({ success: false, message: "Email and password are required" });
+    }
+
+    const fullName = name || [firstname, lastname].filter(Boolean).join(" ").trim();
+    const firstName = firstname || fullName.split(" ")[0] || "User";
+    const lastName = lastname || fullName.split(" ").slice(1).join(" ") || "";
+
+    const user = await User.create({
+      firstname: firstName,
+      lastname: lastName,
+      email: normalizedEmail,
+      password: normalizedPassword,
+      phoneNumber: phoneNumber || phone || "0000000000",
+      isAdmin: Boolean(isAdmin),
+      isActive: isActive !== false,
+    });
+
+    const token = generateToken(user);
+    const userResponse = normalizeUserForResponse(user, token);
+
+    res.status(201).json({
+      success: true,
+      message: "Registration successful",
+      token,
+      jwtToken: token,
+      user: userResponse,
+      data: userResponse,
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ success: false, message: "Email already exists" });
+    }
+
+    res.status(500).json({ success: false, message: "Registration failed", error: error.message });
+  }
+};
+
+exports.loginUser = async (req, res) => {
   try {
     const { email, password, emailOrPhone, phone, phoneNumber } = req.body;
     const loginIdentifier = emailOrPhone || email || phone || phoneNumber;
@@ -125,12 +186,16 @@ exports.loginAdmin = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
 
-    if (!user.isAdmin) {
-      return res.status(403).json({ success: false, message: "Only admin users can login here" });
+    const isAdminRoute = req.baseUrl?.includes("/user") || req.originalUrl?.includes("/user/");
+
+    if (isAdminRoute) {
+      if (!user.isAdmin) {
+        return res.status(403).json({ success: false, message: "Only admin users can login here" });
+      }
     }
 
     if (!user.isActive) {
-      return res.status(403).json({ success: false, message: "Admin account is inactive" });
+      return res.status(403).json({ success: false, message: "Account is inactive" });
     }
 
     const isMatch = await user.comparePassword(password);
@@ -140,22 +205,18 @@ exports.loginAdmin = async (req, res) => {
     }
 
     const token = generateToken(user);
-    const userResponse = user.toObject();
-    delete userResponse.password;
+    const userResponse = normalizeUserForResponse(user, token);
 
     res.status(200).json({
       success: true,
-      message: "Admin login successful",
+      message: isAdminRoute ? "Admin login successful" : "Login successful",
       token,
       jwtToken: token,
-      data: {
-        ...userResponse,
-        jwtToken: token,
-        isAdmin: user.isAdmin,
-      },
+      user: userResponse,
+      data: userResponse,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Admin login failed", error: error.message });
+    res.status(500).json({ success: false, message: "Login failed", error: error.message });
   }
 };
 

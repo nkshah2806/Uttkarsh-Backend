@@ -1,3 +1,10 @@
+const envConfig = require("./config/environment.json");
+Object.entries(envConfig).forEach(([key, value]) => {
+  if (!process.env[key]) {
+    process.env[key] = value;
+  }
+});
+
 require("dotenv").config();
 
 const express = require("express");
