@@ -1,5 +1,8 @@
 const envConfig = require("./config/environment.json");
 Object.entries(envConfig).forEach(([key, value]) => {
+  if (key === "PORT" && process.env.PORT) {
+    return;
+  }
   process.env[key] = value;
 });
 
