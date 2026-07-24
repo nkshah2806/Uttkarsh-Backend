@@ -1,8 +1,6 @@
 const envConfig = require("./config/environment.json");
 Object.entries(envConfig).forEach(([key, value]) => {
-  if (!process.env[key]) {
-    process.env[key] = value;
-  }
+  process.env[key] = value;
 });
 
 require("dotenv").config();
@@ -64,9 +62,16 @@ const ensureDefaultAdmin = async () => {
 // MongoDB Connection
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URL);
+    const conn = await mongoose.connect(process.env.MONGO_URL, {
+      dbName: "uttkarsh_db",
+    });
 
-    console.log("✅ MongoDB Connected");
+    console.log("==========================================");
+    console.log("✅ MongoDB Connected Successfully!");
+    console.log(`📌 Connected Database Name: "${conn.connection.name}"`);
+    console.log(`🌐 Connected Host: "${conn.connection.host}"`);
+    console.log(`🔗 Mongo URL: "${process.env.MONGO_URL}"`);
+    console.log("==========================================");
 
     await ensureDefaultAdmin();
 
