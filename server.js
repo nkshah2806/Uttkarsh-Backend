@@ -18,6 +18,7 @@ const mongoose = require("mongoose");
 
 const User = require("./models/User");
 const userRoutes = require("./routes/userRoutes");
+const siteSettingsRoutes = require("./routes/siteSettingsRoutes");
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/auth", userRoutes);
 app.use("/api/members", userRoutes);
 app.use("/api/admin", userRoutes);
+app.use("/api/site-settings", siteSettingsRoutes);
 
 const ensureDefaultAdmin = async () => {
   try {
