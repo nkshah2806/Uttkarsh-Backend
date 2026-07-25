@@ -23,6 +23,7 @@ const userRoutes = require("./routes/userRoutes");
 const siteSettingsRoutes = require("./routes/siteSettingsRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const productRoutes = require("./routes/productRoutes");
+const memberProfileRoutes = require("./routes/memberProfileRoutes");
 
 const app = express();
 
@@ -44,6 +45,8 @@ app.use("/api/admin", userRoutes);
 app.use("/api/site-settings", siteSettingsRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/member/profile", memberProfileRoutes);
+
 
 const DEFAULT_CATEGORIES = [
   {
