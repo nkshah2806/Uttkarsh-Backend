@@ -9,18 +9,15 @@ Object.entries(envConfig).forEach(([key, value]) => {
 require("dotenv").config();
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "default-jwt-secret";
-process.env.MEMBER_JWT_SECRET = process.env.MEMBER_JWT_SECRET || "member-jwt-secret";
-process.env.ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || "admin-jwt-secret";
+process.env.MEMBER_JWT_SECRET = process.env.MEMBER_JWT_SECRET || process.env.JWT_SECRET;
+process.env.ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET;
 
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 
 const User = require("./models/User");
-const Admin = require("./models/Admin");
 const userRoutes = require("./routes/userRoutes");
-const memberRoutes = require("./routes/memberRoutes");
-const adminRoutes = require("./routes/adminRoutes");
 
 const app = express();
 
@@ -34,28 +31,39 @@ app.get("/", (req, res) => {
   res.send("Hello Backend");
 });
 
+// Unified API Routes
 app.use("/api/user", userRoutes);
 app.use("/api/auth", userRoutes);
-app.use("/api/members", memberRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/members", userRoutes);
+app.use("/api/admin", userRoutes);
 
 const ensureDefaultAdmin = async () => {
   try {
-    const existingAdmin = await Admin.findOne({ username: "admin" });
-    if (existingAdmin) {
-      return;
-    }
-
     const adminEmail = process.env.ADMIN_EMAIL || "admin@uttkarsh.com";
     const adminPassword = process.env.ADMIN_PASSWORD || "admin123456";
 
-    await Admin.create({
+    const existingAdmin = await User.findOne({
+      $or: [{ isAdmin: true }, { email: adminEmail }, { username: "admin" }],
+    });
+
+    if (existingAdmin) {
+      if (!existingAdmin.isAdmin) {
+        existingAdmin.isAdmin = true;
+        await existingAdmin.save();
+      }
+      return;
+    }
+
+    await User.create({
+      fullName: "System Admin",
       username: "admin",
       email: adminEmail,
       password: adminPassword,
+      isAdmin: true,
+      isActive: true,
     });
 
-    console.log(`✅ Default admin created with email: ${adminEmail}`);
+    console.log(`✅ Default admin created in users collection with email: ${adminEmail}`);
   } catch (error) {
     console.error("❌ Failed to create default admin:");
     console.error(error.message);

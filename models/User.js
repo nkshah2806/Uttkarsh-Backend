@@ -4,23 +4,16 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
-    firstname: {
+    fullName: {
       type: String,
       required: true,
       trim: true,
     },
-    lastname: {
+    username: {
       type: String,
-      required: false,
       trim: true,
-    },
-    gender: {
-      type: String,
-      required: false,
-    },
-    birthDate: {
-      type: Date,
-      required: false,
+      lowercase: true,
+      sparse: true,
     },
     email: {
       type: String,
@@ -37,12 +30,44 @@ const userSchema = new mongoose.Schema(
     phoneNumber: {
       type: String,
       default: "",
-      required: false,
-      match: [/^\d{10}$/, "Phone number must be exactly 10 digits"],
+      trim: true,
+    },
+    mobileNumber: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    address: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    city: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    state: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    pinCode: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    gender: {
+      type: String,
+      default: "",
+    },
+    birthDate: {
+      type: Date,
+      default: null,
     },
     image: {
       type: String,
-      required: false,
+      default: "",
     },
     deviceId: {
       type: String,
@@ -63,7 +88,6 @@ const userSchema = new mongoose.Schema(
     jwtToken: {
       type: String,
       default: "",
-      required: false,
     },
     otp: {
       type: String,
@@ -92,20 +116,36 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
+
+// Virtuals for backward compatibility with frontend expecting firstname / lastname / name
+userSchema.virtual("firstname").get(function () {
+  if (!this.fullName) return "";
+  return this.fullName.split(" ")[0] || "";
+});
+
+userSchema.virtual("lastname").get(function () {
+  if (!this.fullName) return "";
+  return this.fullName.split(" ").slice(1).join(" ") || "";
+});
+
+userSchema.virtual("name").get(function () {
+  return this.fullName || "";
+});
 
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
-
   this.password = await bcrypt.hash(this.password, 10);
 });
 
 userSchema.pre("findOneAndUpdate", async function () {
   const update = this.getUpdate();
-
   if (!update || !update.password) return;
-
   update.password = await bcrypt.hash(update.password, 10);
 });
 

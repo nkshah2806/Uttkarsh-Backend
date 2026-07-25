@@ -3,33 +3,60 @@ const User = require("../models/User");
 
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user._id, email: user.email, isAdmin: user.isAdmin },
+    { id: user._id, email: user.email, isAdmin: user.isAdmin, role: user.isAdmin ? "admin" : "member" },
     process.env.JWT_SECRET,
     { expiresIn: "1d" }
   );
 };
 
 const normalizeUserForResponse = (user, token) => {
-  const userResponse = user.toObject ? user.toObject() : { ...user };
-  delete userResponse.password;
+  const userObj = user.toObject ? user.toObject({ virtuals: true }) : { ...user };
+  delete userObj.password;
 
-  const fullName = [userResponse.firstname, userResponse.lastname]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  const phone = userObj.mobileNumber || userObj.phoneNumber || "";
 
   return {
-    ...userResponse,
-    name: fullName || userResponse.email || "User",
-    role: userResponse.isAdmin ? "admin" : "member",
-    jwtToken: userResponse.jwtToken || token || "",
+    ...userObj,
+    fullName: userObj.fullName || `${userObj.firstname || ""} ${userObj.lastname || ""}`.trim() || userObj.email,
+    firstname: userObj.firstname || userObj.fullName?.split(" ")[0] || "",
+    lastname: userObj.lastname || userObj.fullName?.split(" ").slice(1).join(" ") || "",
+    name: userObj.fullName || userObj.email,
+    mobileNumber: phone,
+    phoneNumber: phone,
+    role: userObj.isAdmin ? "admin" : "member",
+    jwtToken: userObj.jwtToken || token || "",
   };
 };
 
 exports.getUsers = async (req, res) => {
   try {
-    const user = await User.find().select("-password");
-    res.status(200).json({ success: true, count: user.length, data: user });
+    const { search, isAdmin, isActive } = req.query;
+    const query = {};
+
+    if (isAdmin !== undefined) query.isAdmin = isAdmin === "true";
+    if (isActive !== undefined) query.isActive = isActive === "true";
+
+    if (search) {
+      const searchRegex = new RegExp(search, "i");
+      query.$or = [
+        { fullName: searchRegex },
+        { email: searchRegex },
+        { phoneNumber: searchRegex },
+        { mobileNumber: searchRegex },
+        { city: searchRegex },
+      ];
+    }
+
+    const users = await User.find(query).select("-password").sort({ createdAt: -1 });
+
+    const data = users.map((u) => normalizeUserForResponse(u));
+
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      data,
+      members: data,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to fetch users", error: error.message });
   }
@@ -43,7 +70,7 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    res.status(200).json({ success: true, data: user });
+    res.status(200).json({ success: true, data: normalizeUserForResponse(user) });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to fetch user", error: error.message });
   }
@@ -51,97 +78,82 @@ exports.getUserById = async (req, res) => {
 
 exports.getMe = async (req, res) => {
   try {
-    res.status(200).json({ success: true, data: normalizeUserForResponse(req.user) });
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
+    res.status(200).json({ success: true, data: normalizeUserForResponse(req.user), member: normalizeUserForResponse(req.user) });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to fetch profile", error: error.message });
   }
 };
 
-exports.createUser = async (req, res) => {
-  try {
-    const {
-      firstname,
-      lastname,
-      gender,
-      birthDate,
-      email,
-      password,
-      phoneNumber,
-      image,
-      deviceId,
-      deviceName,
-      fcmToken,
-      isAdmin,
-      jwtToken,
-      otp,
-      otpExpiresAt,
-      isVerified,
-      createdBy,
-      updatedBy,
-      isActive,
-      age,
-    } = req.body;
-
-    if (!firstname || !email || !password || !phoneNumber) {
-      return res.status(400).json({ success: false, message: "firstname, email, password and phoneNumber are required" });
-    }
-
-    const user = await User.create({
-      firstname,
-      lastname,
-      gender,
-      birthDate,
-      email,
-      password,
-      phoneNumber,
-      image,
-      deviceId,
-      deviceName,
-      fcmToken,
-      isAdmin,
-      jwtToken,
-      otp,
-      otpExpiresAt,
-      isVerified,
-      createdBy,
-      updatedBy,
-      isActive,
-      age,
-    });
-
-    const userResponse = normalizeUserForResponse(user);
-
-    res.status(201).json({ success: true, data: userResponse });
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({ success: false, message: "Email already exists" });
-    }
-
-    res.status(500).json({ success: false, message: "Failed to create user", error: error.message });
-  }
-};
-
 exports.registerUser = async (req, res) => {
   try {
-    const { name, firstname, lastname, email, password, phone, phoneNumber, isAdmin, isActive } = req.body;
+    const {
+      fullName,
+      name,
+      firstname,
+      lastname,
+      email,
+      password,
+      mobileNumber,
+      phoneNumber,
+      phone,
+      address,
+      city,
+      state,
+      pinCode,
+      gender,
+      birthDate,
+      isAdmin,
+      isActive,
+    } = req.body;
 
-    const normalizedEmail = String(email || "").trim().toLowerCase();
-    const normalizedPassword = String(password || "").trim();
+    const resolvedFullName = (fullName || name || [firstname, lastname].filter(Boolean).join(" ")).trim();
+    const resolvedEmail = String(email || "").trim().toLowerCase();
+    const resolvedPassword = String(password || "").trim();
+    const resolvedPhone = String(mobileNumber || phoneNumber || phone || "").trim();
 
-    if (!normalizedEmail || !normalizedPassword) {
-      return res.status(400).json({ success: false, message: "Email and password are required" });
+    if (!resolvedFullName || !resolvedEmail || !resolvedPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name, email and password are required",
+      });
     }
 
-    const fullName = name || [firstname, lastname].filter(Boolean).join(" ").trim();
-    const firstName = firstname || fullName.split(" ")[0] || "User";
-    const lastName = lastname || fullName.split(" ").slice(1).join(" ") || "";
+    if (resolvedPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const existingUser = await User.findOne({
+      $or: [
+        { email: resolvedEmail },
+        ...(resolvedPhone ? [{ phoneNumber: resolvedPhone }, { mobileNumber: resolvedPhone }] : []),
+      ],
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: "User with this email or mobile number already exists",
+      });
+    }
 
     const user = await User.create({
-      firstname: firstName,
-      lastname: lastName,
-      email: normalizedEmail,
-      password: normalizedPassword,
-      phoneNumber: phoneNumber || phone || "0000000000",
+      fullName: resolvedFullName,
+      email: resolvedEmail,
+      password: resolvedPassword,
+      phoneNumber: resolvedPhone,
+      mobileNumber: resolvedPhone,
+      address: address || "",
+      city: city || "",
+      state: state || "",
+      pinCode: pinCode || "",
+      gender: gender || "",
+      birthDate: birthDate || null,
       isAdmin: Boolean(isAdmin),
       isActive: isActive !== false,
     });
@@ -155,43 +167,105 @@ exports.registerUser = async (req, res) => {
       token,
       jwtToken: token,
       user: userResponse,
+      member: userResponse,
       data: userResponse,
     });
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(409).json({ success: false, message: "Email already exists" });
+      return res.status(409).json({ success: false, message: "Email or phone number already exists" });
+    }
+    res.status(500).json({ success: false, message: "Registration failed", error: error.message });
+  }
+};
+
+exports.createUser = async (req, res) => {
+  try {
+    const {
+      fullName,
+      name,
+      firstname,
+      lastname,
+      email,
+      password,
+      mobileNumber,
+      phoneNumber,
+      address,
+      city,
+      state,
+      pinCode,
+      gender,
+      birthDate,
+      age,
+      image,
+      deviceId,
+      deviceName,
+      fcmToken,
+      isAdmin,
+      isActive,
+    } = req.body;
+
+    const resolvedFullName = (fullName || name || [firstname, lastname].filter(Boolean).join(" ")).trim();
+    const resolvedEmail = String(email || "").trim().toLowerCase();
+    const resolvedPassword = String(password || "").trim();
+    const resolvedPhone = String(mobileNumber || phoneNumber || "").trim();
+
+    if (!resolvedFullName || !resolvedEmail || !resolvedPassword) {
+      return res.status(400).json({ success: false, message: "Name, email and password are required" });
     }
 
-    res.status(500).json({ success: false, message: "Registration failed", error: error.message });
+    const user = await User.create({
+      fullName: resolvedFullName,
+      email: resolvedEmail,
+      password: resolvedPassword,
+      phoneNumber: resolvedPhone,
+      mobileNumber: resolvedPhone,
+      address: address || "",
+      city: city || "",
+      state: state || "",
+      pinCode: pinCode || "",
+      gender: gender || "",
+      birthDate: birthDate || null,
+      age: age || null,
+      image: image || "",
+      deviceId: deviceId || "",
+      deviceName: deviceName || "",
+      fcmToken: fcmToken || "",
+      isAdmin: Boolean(isAdmin),
+      isActive: isActive !== false,
+    });
+
+    const userResponse = normalizeUserForResponse(user);
+    res.status(201).json({ success: true, data: userResponse });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ success: false, message: "Email or phone number already exists" });
+    }
+    res.status(500).json({ success: false, message: "Failed to create user", error: error.message });
   }
 };
 
 exports.loginUser = async (req, res) => {
   try {
-    const { email, password, emailOrPhone, phone, phoneNumber } = req.body;
-    const loginIdentifier = emailOrPhone || email || phone || phoneNumber;
+    const { email, username, password, emailOrPhone, phone, phoneNumber, mobileNumber } = req.body;
+    const loginIdentifier = emailOrPhone || email || username || phone || phoneNumber || mobileNumber;
 
     if (!loginIdentifier || !password) {
-      return res.status(400).json({ success: false, message: "Email or phone and password are required" });
+      return res.status(400).json({ success: false, message: "Email/Phone/Username and password are required" });
     }
+
+    const searchStr = String(loginIdentifier).trim().toLowerCase();
 
     const user = await User.findOne({
       $or: [
-        { email: String(loginIdentifier).toLowerCase() },
-        { phoneNumber: String(loginIdentifier) },
+        { email: searchStr },
+        { username: searchStr },
+        { phoneNumber: String(loginIdentifier).trim() },
+        { mobileNumber: String(loginIdentifier).trim() },
       ],
     }).select("+password");
 
     if (!user) {
-      return res.status(401).json({ success: false, message: "Invalid email or password" });
-    }
-
-    const isAdminRoute = req.baseUrl?.includes("/user") || req.originalUrl?.includes("/user/");
-
-    if (isAdminRoute) {
-      if (!user.isAdmin) {
-        return res.status(403).json({ success: false, message: "Only admin users can login here" });
-      }
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
     if (!user.isActive) {
@@ -199,9 +273,8 @@ exports.loginUser = async (req, res) => {
     }
 
     const isMatch = await user.comparePassword(password);
-
     if (!isMatch) {
-      return res.status(401).json({ success: false, message: "Invalid email or password" });
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
     const token = generateToken(user);
@@ -209,10 +282,12 @@ exports.loginUser = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: isAdminRoute ? "Admin login successful" : "Login successful",
+      message: "Login successful",
       token,
       jwtToken: token,
       user: userResponse,
+      member: userResponse,
+      admin: userResponse,
       data: userResponse,
     });
   } catch (error) {
@@ -222,14 +297,27 @@ exports.loginUser = async (req, res) => {
 
 exports.updateUser = async (req, res) => {
   try {
-    const updateFields = [
+    const targetId = req.params.id || req.body.userId || req.body.id;
+
+    if (!targetId) {
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    const allowedFields = [
+      "fullName",
       "firstname",
       "lastname",
-      "gender",
-      "birthDate",
+      "username",
       "email",
       "password",
       "phoneNumber",
+      "mobileNumber",
+      "address",
+      "city",
+      "state",
+      "pinCode",
+      "gender",
+      "birthDate",
       "image",
       "deviceId",
       "deviceName",
@@ -246,32 +334,43 @@ exports.updateUser = async (req, res) => {
     ];
 
     const updateData = {};
-    updateFields.forEach((f) => {
-      if (req.body[f] !== undefined) updateData[f] = req.body[f];
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) updateData[field] = req.body[field];
     });
 
-    const user = await User.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-      runValidators: true,
-    }).select("-password");
+    if (req.body.name && !updateData.fullName) {
+      updateData.fullName = req.body.name;
+    }
+    if ((req.body.firstname || req.body.lastname) && !updateData.fullName) {
+      updateData.fullName = [req.body.firstname, req.body.lastname].filter(Boolean).join(" ").trim();
+    }
+    if (req.body.phone && !updateData.phoneNumber) {
+      updateData.phoneNumber = req.body.phone;
+      updateData.mobileNumber = req.body.phone;
+    }
 
+    const user = await User.findById(targetId);
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    res.status(200).json({ success: true, data: user });
+    Object.assign(user, updateData);
+    await user.save();
+
+    const userResponse = normalizeUserForResponse(user);
+    res.status(200).json({ success: true, data: userResponse, user: userResponse });
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(409).json({ success: false, message: "Email already exists" });
+      return res.status(409).json({ success: false, message: "Email or phone number already exists" });
     }
-
     res.status(500).json({ success: false, message: "Failed to update user", error: error.message });
   }
 };
 
 exports.deleteUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const targetId = req.params.id || req.body.id;
+    const user = await User.findByIdAndDelete(targetId);
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });

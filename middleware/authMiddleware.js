@@ -10,20 +10,36 @@ const getTokenFromHeader = (req) => {
 exports.protect = async (req, res, next) => {
   const token = getTokenFromHeader(req);
   if (!token) {
-    return res.status(401).json({ success: false, message: "Not authorized" });
+    return res.status(401).json({ success: false, message: "Not authorized, no token provided" });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select("-password");
+    const secret = process.env.JWT_SECRET || process.env.ADMIN_JWT_SECRET || process.env.MEMBER_JWT_SECRET;
+    let decoded;
 
-    if (!req.user) {
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      try {
+        decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
+      } catch (err2) {
+        decoded = jwt.verify(token, process.env.MEMBER_JWT_SECRET);
+      }
+    }
+
+    const userId = decoded.id || decoded.adminId || decoded.memberId;
+    const user = await User.findById(userId).select("-password");
+
+    if (!user) {
       return res.status(401).json({ success: false, message: "User not found" });
     }
 
+    req.user = user;
+    req.member = user;
+    req.admin = user;
     next();
   } catch (error) {
-    return res.status(401).json({ success: false, message: "Invalid token" });
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
   }
 };
 
@@ -39,38 +55,10 @@ exports.adminOnly = (req, res, next) => {
   next();
 };
 
-exports.verifyMemberToken = (req, res, next) => {
-  const token = getTokenFromHeader(req);
-  if (!token) {
-    return res.status(401).json({ success: false, message: "Not authorized" });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.MEMBER_JWT_SECRET);
-    if (decoded.role !== "member") {
-      return res.status(403).json({ success: false, message: "Forbidden" });
-    }
-    req.member = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ success: false, message: "Invalid member token" });
-  }
-};
+exports.verifyMemberToken = exports.protect;
 
 exports.verifyAdminToken = (req, res, next) => {
-  const token = getTokenFromHeader(req);
-  if (!token) {
-    return res.status(401).json({ success: false, message: "Not authorized" });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
-    if (decoded.role !== "admin") {
-      return res.status(403).json({ success: false, message: "Forbidden" });
-    }
-    req.admin = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ success: false, message: "Invalid admin token" });
-  }
+  exports.protect(req, res, () => {
+    exports.adminOnly(req, res, next);
+  });
 };
