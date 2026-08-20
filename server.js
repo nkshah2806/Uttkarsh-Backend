@@ -24,6 +24,10 @@ const siteSettingsRoutes = require("./routes/siteSettingsRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const productRoutes = require("./routes/productRoutes");
 const memberProfileRoutes = require("./routes/memberProfileRoutes");
+const masterDataRoutes = require("./routes/masterDataRoutes");
+const franchiseRoutes = require("./routes/franchiseRoutes");
+const patientRoutes = require("./routes/patientRoutes");
+const visitRoutes = require("./routes/visitRoutes");
 
 const app = express();
 
@@ -46,6 +50,12 @@ app.use("/api/site-settings", siteSettingsRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/member/profile", memberProfileRoutes);
+
+// Quantum Machine Health Analysis Module Routes
+app.use("/api/v1/admin/parameters", masterDataRoutes);
+app.use("/api/v1/admin/franchises", franchiseRoutes);
+app.use("/api/v1/patients", patientRoutes);
+app.use("/api/v1/visits", visitRoutes);
 
 
 const DEFAULT_CATEGORIES = [

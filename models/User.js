@@ -85,6 +85,21 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    franchise_id: {
+      type: Types.ObjectId,
+      ref: "Franchise",
+      default: null,
+    },
+    role: {
+      type: String,
+      enum: ["SUPER_ADMIN", "ADMIN", "FRANCHISE", "CONSULTANT", "OPERATOR", "TRAINER", "PATIENT"],
+      default: "ADMIN",
+    },
+    language_pref: {
+      type: String,
+      enum: ["hi", "en"],
+      default: "en",
+    },
     jwtToken: {
       type: String,
       default: "",
