@@ -1,6 +1,6 @@
 const Visit = require("../models/Visit");
 const Patient = require("../models/Patient");
-const Franchise = require("../models/Franchise");
+const MemberProfile = require("../models/MemberProfile");
 const VisitParameterResult = require("../models/VisitParameterResult");
 const VisitSelectedContent = require("../models/VisitSelectedContent");
 const ParameterMasterContent = require("../models/ParameterMasterContent");
@@ -9,17 +9,37 @@ const User = require("../models/User");
 
 exports.generateReportHTML = async (visitId, lang = "en") => {
   const visit = await Visit.findById(visitId)
-    .populate("patient_id")
-    .populate("franchise_id")
+    .populate({
+      path: "patient_id",
+      populate: { path: "registered_by" },
+    })
     .populate("consultant_id");
 
   if (!visit) throw new Error("Visit not found");
 
   const patient = visit.patient_id;
-  const franchise = visit.franchise_id || {
-    name: "UTKARSH Head Office",
-    phone: "+91 9876543210",
-    address: "Main Healthcare Center",
+  const registeredBy = patient?.registered_by;
+
+  let memberProfile = null;
+  if (registeredBy && registeredBy._id) {
+    memberProfile = await MemberProfile.findOne({ user: registeredBy._id });
+  }
+
+  const franchise = {
+    name:
+      memberProfile?.store_name ||
+      memberProfile?.member_name ||
+      registeredBy?.fullName ||
+      "UTKARSH QUANTUM HEALTH",
+    phone:
+      memberProfile?.phone ||
+      registeredBy?.phoneNumber ||
+      registeredBy?.mobileNumber ||
+      "",
+    address:
+      memberProfile?.address ||
+      (memberProfile?.city ? `${memberProfile.city}, ${memberProfile.state}` : "") ||
+      "Healthcare Center",
     logo_url: "",
   };
   const consultant = visit.consultant_id || { fullName: "Specialist Consultant" };

@@ -17,7 +17,6 @@ exports.createVisit = async (req, res) => {
 
     const visit = await Visit.create({
       patient_id,
-      franchise_id: patient.franchise_id,
       consultant_id: consultant_id || req.user._id,
       status: "DATA_ENTRY",
     });
@@ -33,8 +32,10 @@ exports.createVisit = async (req, res) => {
 exports.getVisitById = async (req, res) => {
   try {
     const visit = await Visit.findById(req.params.id)
-      .populate("patient_id")
-      .populate("franchise_id")
+      .populate({
+        path: "patient_id",
+        populate: { path: "registered_by", select: "fullName email username role" },
+      })
       .populate("consultant_id", "fullName email");
     if (!visit) return res.status(404).json({ success: false, message: "Visit not found" });
 

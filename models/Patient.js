@@ -12,7 +12,8 @@ const patientSchema = new mongoose.Schema(
     franchise_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Franchise",
-      required: true,
+      required: false,
+      default: null,
     },
     name: {
       type: String,
@@ -31,6 +32,29 @@ const patientSchema = new mongoose.Schema(
     mobile: {
       type: String,
       required: true,
+      trim: true,
+    },
+    weight: {
+      type: Number,
+      default: null,
+    },
+    weight_unit: {
+      type: String,
+      default: "kg",
+      trim: true,
+    },
+    height: {
+      type: Number,
+      default: null,
+    },
+    height_unit: {
+      type: String,
+      default: "cm",
+      trim: true,
+    },
+    address: {
+      type: String,
+      default: "",
       trim: true,
     },
     registered_by: {
