@@ -73,7 +73,7 @@ exports.saveVisitResults = async (req, res) => {
       return {
         updateOne: {
           filter: { visit_id: req.params.id, parameter_id: r.parameter_id },
-          update: { raw_value: r.raw_value, result_type },
+          update: { $set: { raw_value: r.raw_value, result_type } },
           upsert: true,
         },
       };
@@ -97,7 +97,7 @@ exports.importCSVResults = async (req, res) => {
       return res.status(400).json({ success: false, message: "rows must be an array" });
     }
 
-    const codes = rows.map((r) => r.code ? r.code.toUpperCase() : "");
+    const codes = rows.map((r) => (r.code ? r.code.toUpperCase() : ""));
     const parameters = await Parameter.find({ code: { $in: codes } });
     const codeToParamMap = new Map(parameters.map((p) => [p.code, p]));
 
@@ -131,28 +131,78 @@ exports.getAutoReport = async (req, res) => {
   }
 };
 
-// @desc Update consultant content selection overrides
+// @desc Update consultant content selection overrides and optional next visit date
 // @route PATCH /api/v1/visits/:id/selected-content
 exports.updateSelectedContent = async (req, res) => {
   try {
-    const { selections } = req.body; // array of { parameter_master_content_id, is_selected }
-    if (!Array.isArray(selections)) {
-      return res.status(400).json({ success: false, message: "selections must be an array" });
+    const { selections, next_visit_date } = req.body;
+
+    if (next_visit_date !== undefined) {
+      await Visit.findByIdAndUpdate(req.params.id, {
+        next_visit_date: next_visit_date ? new Date(next_visit_date) : null,
+      });
     }
 
-    const bulkOps = selections.map((s) => ({
-      updateOne: {
-        filter: {
-          visit_id: req.params.id,
-          parameter_master_content_id: s.parameter_master_content_id,
-        },
-        update: { is_selected: Boolean(s.is_selected) },
-        upsert: true,
-      },
-    }));
+    if (Array.isArray(selections)) {
+      const bulkOps = selections.map((s) => {
+        const isSelected = Boolean(s.is_selected);
 
-    await VisitSelectedContent.bulkWrite(bulkOps);
-    return res.json({ success: true, message: "Content selections updated" });
+        if (s.node_id) {
+          const filter = {
+            visit_id: req.params.id,
+            node_id: s.node_id,
+          };
+          if (s.parameter_id) {
+            filter.parameter_id = s.parameter_id;
+          }
+
+          return {
+            updateOne: {
+              filter,
+              update: {
+                $set: {
+                  visit_id: req.params.id,
+                  parameter_id: s.parameter_id,
+                  node_id: s.node_id,
+                  is_selected: isSelected,
+                },
+              },
+              upsert: true,
+            },
+          };
+        } else {
+          // Legacy parameter_master_content_id format
+          const filter = {
+            visit_id: req.params.id,
+            parameter_master_content_id: s.parameter_master_content_id,
+          };
+          if (s.parameter_id) {
+            filter.parameter_id = s.parameter_id;
+          }
+
+          return {
+            updateOne: {
+              filter,
+              update: {
+                $set: {
+                  visit_id: req.params.id,
+                  parameter_id: s.parameter_id,
+                  parameter_master_content_id: s.parameter_master_content_id,
+                  is_selected: isSelected,
+                },
+              },
+              upsert: true,
+            },
+          };
+        }
+      });
+
+      if (bulkOps.length > 0) {
+        await VisitSelectedContent.bulkWrite(bulkOps);
+      }
+    }
+
+    return res.json({ success: true, message: "Selections and visit details updated successfully" });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });
   }
@@ -162,9 +212,12 @@ exports.updateSelectedContent = async (req, res) => {
 // @route POST /api/v1/visits/:id/generate-pdf
 exports.generatePDF = async (req, res) => {
   try {
-    const { lang } = req.body; // 'hi' or 'en'
+    const { lang, next_visit_date } = req.body; // 'hi' or 'en'
     const selectedLang = lang === "hi" ? "hi" : "en";
-    const html = await generateReportHTML(req.params.id, selectedLang);
+
+    const html = await generateReportHTML(req.params.id, selectedLang, {
+      next_visit_date,
+    });
 
     const report = await Report.create({
       visit_id: req.params.id,
@@ -198,6 +251,86 @@ exports.shareWhatsApp = async (req, res) => {
 
     const whatsappUrl = `https://wa.me/91${phone}?text=${message}`;
     return res.json({ success: true, whatsappUrl });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc Get comprehensive detailed report breakdown for a visit (evaluated parameters + selected guidance)
+// @route GET /api/v1/visits/:id/detailed-report
+exports.getDetailedReport = async (req, res) => {
+  try {
+    const visit = await Visit.findById(req.params.id)
+      .populate({
+        path: "patient_id",
+        populate: { path: "registered_by", select: "fullName email username role phoneNumber mobileNumber" },
+      })
+      .populate("consultant_id", "fullName email username role");
+
+    if (!visit) return res.status(404).json({ success: false, message: "Visit not found" });
+
+    // Fetch all evaluated parameters with their master info
+    const rawResults = await VisitParameterResult.find({ visit_id: req.params.id })
+      .populate("parameter_id")
+      .sort({ createdAt: 1 });
+
+    const parameters = rawResults.map((r) => {
+      const p = r.parameter_id;
+      return {
+        _id: r._id,
+        parameter_id: p?._id,
+        code: p?.code,
+        name: p?.name,
+        name_hi: p?.name_hi,
+        category: p?.category || "General Health",
+        normal_min: p?.normal_min,
+        normal_max: p?.normal_max,
+        unit: p?.unit || "",
+        raw_value: r.raw_value,
+        result_type: r.result_type, // 'NORMAL', 'LOW', 'HIGH'
+      };
+    });
+
+    // Fetch auto analysis with current selected items
+    const autoAnalysis = await generateAutoAnalysis(req.params.id);
+
+    // Summary counts
+    const totalCount = parameters.length;
+    const normalCount = parameters.filter((p) => p.result_type === "NORMAL").length;
+    const lowCount = parameters.filter((p) => p.result_type === "LOW").length;
+    const highCount = parameters.filter((p) => p.result_type === "HIGH").length;
+    const abnormalCount = lowCount + highCount;
+
+    let selectedPointsCount = 0;
+    (autoAnalysis.analyzed_items || []).forEach((item) => {
+      (item.sections || []).forEach((sec) => {
+        (sec.items || []).forEach((it) => {
+          if (it.is_selected) selectedPointsCount++;
+        });
+      });
+    });
+
+    const reports = await Report.find({ visit_id: req.params.id }).sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      data: {
+        visit,
+        patient: visit.patient_id,
+        consultant: visit.consultant_id,
+        parameters,
+        abnormal_analysis: autoAnalysis.analyzed_items || [],
+        summary: {
+          total: totalCount,
+          normal: normalCount,
+          low: lowCount,
+          high: highCount,
+          abnormal: abnormalCount,
+          selected_points_count: selectedPointsCount,
+        },
+        reports,
+      },
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

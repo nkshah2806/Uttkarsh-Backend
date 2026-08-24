@@ -52,6 +52,16 @@ const patientSchema = new mongoose.Schema(
       default: "cm",
       trim: true,
     },
+    dob: {
+      type: Date,
+      default: null,
+    },
+    email: {
+      type: String,
+      default: "",
+      trim: true,
+      lowercase: true,
+    },
     address: {
       type: String,
       default: "",

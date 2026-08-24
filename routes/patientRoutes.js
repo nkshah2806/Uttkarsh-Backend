@@ -3,6 +3,7 @@ const router = express.Router();
 const { protect } = require("../middleware/authMiddleware");
 const {
   getPatients,
+  getPatientById,
   createPatient,
   updatePatient,
   deletePatient,
@@ -11,6 +12,6 @@ const {
 router.use(protect);
 
 router.route("/").get(getPatients).post(createPatient);
-router.route("/:id").put(updatePatient).delete(deletePatient);
+router.route("/:id").get(getPatientById).put(updatePatient).delete(deletePatient);
 
 module.exports = router;

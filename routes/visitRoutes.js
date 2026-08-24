@@ -4,6 +4,7 @@ const { protect } = require("../middleware/authMiddleware");
 const {
   createVisit,
   getVisitById,
+  getDetailedReport,
   saveVisitResults,
   importCSVResults,
   getAutoReport,
@@ -16,6 +17,7 @@ router.use(protect);
 
 router.post("/", createVisit);
 router.get("/:id", getVisitById);
+router.get("/:id/detailed-report", getDetailedReport);
 router.post("/:id/results", saveVisitResults);
 router.post("/:id/results/import", importCSVResults);
 router.get("/:id/auto-report", getAutoReport);

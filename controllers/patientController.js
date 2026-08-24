@@ -1,7 +1,11 @@
 const Patient = require("../models/Patient");
 const User = require("../models/User");
+const Visit = require("../models/Visit");
+const VisitParameterResult = require("../models/VisitParameterResult");
+const VisitSelectedContent = require("../models/VisitSelectedContent");
+const Report = require("../models/Report");
 
-// @desc Get patients (scoped by role/franchise or member filter)
+// @desc Get patients (scoped by role/franchise or member filter) with latest visit stats
 // @route GET /api/v1/patients
 exports.getPatients = async (req, res) => {
   try {
@@ -17,14 +21,117 @@ exports.getPatients = async (req, res) => {
         { name: { $regex: search, $options: "i" } },
         { patient_code: { $regex: search, $options: "i" } },
         { mobile: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
       ];
     }
 
     const patients = await Patient.find(query)
-      .populate("registered_by", "fullName email username role")
+      .populate("registered_by", "fullName email username role phoneNumber mobileNumber")
       .sort({ createdAt: -1 });
 
-    return res.json({ success: true, count: patients.length, data: patients });
+    if (patients.length === 0) {
+      return res.json({ success: true, count: 0, data: [] });
+    }
+
+    const patientIds = patients.map((p) => p._id);
+    const latestVisits = await Visit.aggregate([
+      { $match: { patient_id: { $in: patientIds } } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: "$patient_id",
+          latest_status: { $first: "$status" },
+          latest_visit_date: { $first: "$visit_date" },
+          total_visits: { $sum: 1 },
+          latest_visit_id: { $first: "$_id" },
+        },
+      },
+    ]);
+    const visitMap = new Map(latestVisits.map((v) => [v._id.toString(), v]));
+
+    const enrichedPatients = patients.map((p) => {
+      const vInfo = visitMap.get(p._id.toString());
+      return {
+        ...p.toObject(),
+        latest_status: vInfo ? vInfo.latest_status : "REGISTERED",
+        total_visits: vInfo ? vInfo.total_visits : 0,
+        latest_visit_date: vInfo ? vInfo.latest_visit_date : null,
+        latest_visit_id: vInfo ? vInfo.latest_visit_id : null,
+      };
+    });
+
+    return res.json({ success: true, count: enrichedPatients.length, data: enrichedPatients });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc Get single patient details with complete visit & report history
+// @route GET /api/v1/patients/:id
+exports.getPatientById = async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.params.id).populate(
+      "registered_by",
+      "fullName email username role phoneNumber mobileNumber"
+    );
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: "Patient not found" });
+    }
+
+    // Fetch all visits for this patient
+    const visits = await Visit.find({ patient_id: patient._id })
+      .populate("consultant_id", "fullName email username role")
+      .sort({ createdAt: -1 });
+
+    // Aggregate metrics for each visit in history
+    const visitHistory = await Promise.all(
+      visits.map(async (v) => {
+        const results = await VisitParameterResult.find({ visit_id: v._id });
+        const totalParams = results.length;
+        const abnormalParams = results.filter(
+          (r) => r.result_type === "LOW" || r.result_type === "HIGH"
+        ).length;
+        const normalParams = results.filter((r) => r.result_type === "NORMAL").length;
+
+        const selectedContentCount = await VisitSelectedContent.countDocuments({
+          visit_id: v._id,
+          is_selected: true,
+        });
+
+        const reports = await Report.find({ visit_id: v._id }).sort({ createdAt: -1 });
+
+        return {
+          _id: v._id,
+          visit_date: v.visit_date || v.createdAt,
+          next_visit_date: v.next_visit_date || v.report_snapshot?.next_visit_date || null,
+          createdAt: v.createdAt,
+          status: v.status,
+          consultant: v.consultant_id,
+          report_type: "Quantum Full Body Resonance Analysis",
+          total_parameters: totalParams,
+          normal_parameters: normalParams,
+          abnormal_parameters: abnormalParams,
+          selected_content_count: selectedContentCount,
+          reports: reports,
+          latest_report_id: reports.length > 0 ? reports[0]._id : null,
+          disclaimer: v.report_snapshot?.disclaimer || null,
+        };
+      })
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        patient,
+        visits: visitHistory,
+        stats: {
+          total_scans: visitHistory.length,
+          last_scan_date: visitHistory.length > 0 ? visitHistory[0].visit_date : null,
+          latest_status: visitHistory.length > 0 ? visitHistory[0].status : "REGISTERED",
+        },
+      },
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -39,6 +146,8 @@ exports.createPatient = async (req, res) => {
       age,
       gender,
       mobile,
+      dob,
+      email,
       weight,
       weight_unit,
       height,
@@ -54,8 +163,8 @@ exports.createPatient = async (req, res) => {
     }
 
     // Weight and height validations if provided
-    const parsedWeight = weight !== undefined && weight !== "" ? Number(weight) : null;
-    const parsedHeight = height !== undefined && height !== "" ? Number(height) : null;
+    const parsedWeight = weight !== undefined && weight !== "" && weight !== null ? Number(weight) : null;
+    const parsedHeight = height !== undefined && height !== "" && height !== null ? Number(height) : null;
 
     if (parsedWeight !== null && (isNaN(parsedWeight) || parsedWeight <= 0 || parsedWeight > 500)) {
       return res.status(400).json({
@@ -77,10 +186,12 @@ exports.createPatient = async (req, res) => {
 
     const patient = await Patient.create({
       patient_code,
-      name,
+      name: String(name).trim(),
       age: Number(age),
       gender,
       mobile: String(mobile).trim(),
+      dob: dob ? new Date(dob) : null,
+      email: email ? String(email).trim().toLowerCase() : "",
       weight: parsedWeight,
       weight_unit: weight_unit || "kg",
       height: parsedHeight,
@@ -91,7 +202,7 @@ exports.createPatient = async (req, res) => {
 
     const populatedPatient = await Patient.findById(patient._id).populate(
       "registered_by",
-      "fullName email username role"
+      "fullName email username role phoneNumber mobileNumber"
     );
 
     return res.status(201).json({ success: true, data: populatedPatient });
@@ -114,6 +225,8 @@ exports.updatePatient = async (req, res) => {
       age,
       gender,
       mobile,
+      dob,
+      email,
       weight,
       weight_unit,
       height,
@@ -126,6 +239,8 @@ exports.updatePatient = async (req, res) => {
     if (age !== undefined) updates.age = Number(age);
     if (gender !== undefined) updates.gender = gender;
     if (mobile !== undefined) updates.mobile = String(mobile).trim();
+    if (dob !== undefined) updates.dob = dob ? new Date(dob) : null;
+    if (email !== undefined) updates.email = String(email).trim().toLowerCase();
 
     if (weight !== undefined) {
       const parsedWeight = weight !== "" && weight !== null ? Number(weight) : null;
@@ -151,7 +266,7 @@ exports.updatePatient = async (req, res) => {
       req.params.id,
       { $set: updates },
       { new: true, runValidators: true }
-    ).populate("registered_by", "fullName email username role");
+    ).populate("registered_by", "fullName email username role phoneNumber mobileNumber");
 
     return res.json({ success: true, data: updatedPatient });
   } catch (error) {
@@ -172,5 +287,6 @@ exports.deletePatient = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 
