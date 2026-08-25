@@ -28,6 +28,7 @@ const masterDataRoutes = require("./routes/masterDataRoutes");
 const patientRoutes = require("./routes/patientRoutes");
 const visitRoutes = require("./routes/visitRoutes");
 const disclaimerRoutes = require("./routes/disclaimerRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 const Disclaimer = require("./models/Disclaimer");
 
 const app = express();
@@ -57,6 +58,9 @@ app.use("/api/v1/admin/parameters", masterDataRoutes);
 app.use("/api/v1/patients", patientRoutes);
 app.use("/api/v1/visits", visitRoutes);
 app.use("/api/v1/disclaimers", disclaimerRoutes);
+
+// Dashboard Routes
+app.use("/api/dashboard", dashboardRoutes);
 
 
 const DEFAULT_CATEGORIES = [
