@@ -65,7 +65,6 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
   if (registeredBy && registeredBy._id) {
     memberProfile = await MemberProfile.findOne({ user: registeredBy._id });
   }
-
   // Fetch SiteSettings for global branding fallback if needed
   const siteSettings = await SiteSettings.findOne({ key: "default_settings" });
 
@@ -90,7 +89,7 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
       (memberProfile?.city ? `${memberProfile.city}, ${memberProfile.state}` : "") ||
       siteSettings?.footer?.address ||
       "Healthcare & Resonance Wellness Center",
-    logo_url: memberProfile?.store_logo || memberProfile?.logo_url || "",
+    logo_url: memberProfile?.store_logo || memberProfile?.logo_url || "https://utkarshcorporation.com/public/assets/images/logo.png",
   };
 
   const consultant = visit.consultant_id || {
@@ -143,12 +142,9 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
   const isHindi = lang === "hi";
 
   const labels = {
-    brandSubtitle: isHindi
-      ? "आयुर्वेदिक एवं सेलुलर रेजोनेंस स्वास्थ्य मूल्यांकन केंद्र · आयुष अनुपालित"
-      : "Cellular Resonance & Ayurvedic Wellness Evaluation · AYUSH Compliant",
     title: isHindi
       ? "क्वांटम स्वास्थ्य विश्लेषण रिपोर्ट"
-      : "QUANTUM RESONANCE HEALTH ANALYSIS REPORT",
+      : "QUANTUM RESONANCE MAGNETIC ANALYZER",
     patientInfo: isHindi ? "रोगी जनसांख्यिकी एवं विवरण" : "Patient Demographics & Vitals",
     patientCode: isHindi ? "रोगी आईडी / कोड" : "Patient ID",
     name: isHindi ? "रोगी का नाम" : "Full Name",
@@ -223,21 +219,49 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
   <style>
     @page {
       size: A4;
-      margin: 12mm 14mm 14mm 14mm;
+      margin: 10mm 12mm 12mm 12mm;
     }
     * {
       box-sizing: border-box;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       color: #0f172a;
-      margin: 0;
-      padding: 0;
-      background: #ffffff;
       line-height: 1.45;
       font-size: 12px;
+    }
+
+    /* Print-specific controls: consistent page margins, no browser header/footer whitespace */
+    @media print {
+      @page {
+        size: A4;
+        margin: 10mm 12mm 12mm 12mm;
+      }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+      }
+      h1, h2, h3, h4, .section-heading, .guidance-section-title, .param-header {
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+      .bullet-list li {
+        page-break-inside: avoid;
+        orphans: 3;
+        widows: 3;
+      }
+      .disclaimer-page {
+        page-break-before: always;
+        break-before: page;
+      }
     }
 
     /* Professional Top Header */
@@ -271,7 +295,7 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
     }
     .brand-title {
       font-size: 18px;
-      font-weight: 800;
+      font-weight: 700;
       color: #312e81;
       letter-spacing: -0.3px;
       margin: 0;
@@ -293,8 +317,8 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
       text-align: right;
     }
     .report-main-title {
-      font-size: 13px;
-      font-weight: 800;
+      font-size: 15px;
+      font-weight: 700;
       color: #1e1b4b;
       margin: 0;
       letter-spacing: 0.3px;
@@ -359,12 +383,21 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
       display: flex;
       align-items: center;
       justify-content: space-between;
+      page-break-after: avoid;
+      break-after: avoid;
     }
     .summary-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
       font-size: 11px;
+    }
+    .summary-table thead {
+      display: table-header-group;
+    }
+    .summary-table tr {
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
     .summary-table th {
       background: #eef2ff;
@@ -399,11 +432,12 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
 
     /* Detailed Parameter Analysis Block */
     .param-block {
-      margin-bottom: 14px;
+      margin-bottom: 12px;
       border: 1px solid #e2e8f0;
       border-radius: 8px;
-      overflow: hidden;
-      page-break-inside: avoid;
+      /* Let large blocks flow across pages to avoid big blank gaps */
+      page-break-inside: auto;
+      break-inside: auto;
     }
     .param-header {
       background: #f1f5f9;
@@ -412,6 +446,32 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
       display: flex;
       justify-content: space-between;
       align-items: center;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    .param-body {
+      padding: 8px 14px 4px;
+    }
+    .param-body .guidance-section-title {
+      margin-top: 6px;
+    }
+    .param-body .bullet-list:last-child {
+      margin-bottom: 8px;
+    }
+    @media print {
+      /* Keep header attached to its content and keep each section title with its list */
+      .param-header {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .guidance-section-title {
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+      .guidance-section-title + .bullet-list {
+        page-break-before: avoid;
+        break-before: avoid;
+      }
     }
     .param-name {
       font-size: 12.5px;
@@ -427,9 +487,6 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
       padding: 2px 6px;
       border-radius: 4px;
       margin-right: 6px;
-    }
-    .param-body {
-      padding: 10px 14px;
     }
     .guidance-section-title {
       font-size: 11px;
@@ -599,15 +656,18 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
   <!-- Top Professional Header -->
   <div class="report-header">
     <div class="header-brand">
-      ${
-        franchise.logo_url
-          ? `<img src="${franchise.logo_url}" alt="Logo" style="height: 48px; max-width: 120px; object-fit: contain;" />`
-          : `<div class="brand-logo-seal">UQ</div>`
-      }
+      ${franchise.logo_url
+      ? `<img src="${franchise.logo_url}" alt="Logo" style="height: 48px; max-width: 120px; object-fit: contain;" />`
+      : `<div class="brand-logo-seal">UQ</div>`
+    }
       <div>
         <h1 class="brand-title">${escapeHTML(franchise.name)}</h1>
-        <div class="brand-subtitle">${escapeHTML(labels.brandSubtitle)}</div>
-        <div class="brand-contact">${escapeHTML(franchise.address)} ${franchise.phone ? '• Tel: ' + escapeHTML(franchise.phone) : ''}</div>
+        <div class="brand-contact">
+          ${escapeHTML(franchise.address)}
+        </div>
+        <div class="brand-contact">
+          ${franchise.phone ? 'Tel: ' + escapeHTML(franchise.phone) : ''}
+        </div>
       </div>
     </div>
     <div class="header-meta">
@@ -665,12 +725,11 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
       </tr>
     </thead>
     <tbody>
-      ${
-        abnormalResults.length === 0
-          ? `<tr><td colspan="4" style="text-align: center; color: #166534; padding: 14px; font-weight: 600; background: #f0fdf4;">All evaluated cellular parameters are within standard baseline physiological ranges.</td></tr>`
-          : abnormalResults
-              .map(
-                (r) => `
+      ${abnormalResults.length === 0
+      ? `<tr><td colspan="4" style="text-align: center; color: #166534; padding: 14px; font-weight: 600; background: #f0fdf4;">All evaluated cellular parameters are within standard baseline physiological ranges.</td></tr>`
+      : abnormalResults
+        .map(
+          (r) => `
         <tr>
           <td>
             <span class="param-code-pill">${escapeHTML(r.parameter.code)}</span>
@@ -683,25 +742,24 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
           </td>
         </tr>
       `
-              )
-              .join("")
-      }
+        )
+        .join("")
+    }
     </tbody>
   </table>
 
   <!-- Detailed Clinical & Ayurvedic Guidance Sections (Selected Content Only) -->
-  ${
-    filteredParameters.length > 0
+  ${filteredParameters.length > 0
       ? `<div style="font-weight: 700; font-size: 13px; color: #1e293b; margin: 20px 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">
           ${escapeHTML(labels.detailedAnalysis)}
         </div>`
       : ""
-  }
+    }
 
   ${filteredParameters
-    .map((item) => {
-      const p = item.parameter;
-      return `
+      .map((item) => {
+        const p = item.parameter;
+        return `
       <div class="param-block">
         <div class="param-header">
           <div>
@@ -721,26 +779,25 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
               </div>
               <ul class="bullet-list">
                 ${sec.items
-                  .map(
-                    (bullet) => `
+                .map(
+                  (bullet) => `
                   <li style="${bullet.level > 1 ? 'margin-left: 14px; list-style-type: circle;' : ''}">
                     ${escapeHTML(isHindi ? bullet.text_hi || bullet.text_en : bullet.text_en)}
                   </li>
                 `
-                  )
-                  .join("")}
+                )
+                .join("")}
               </ul>
             `)
             .join("")}
         </div>
       </div>
     `;
-    })
-    .join("")}
+      })
+      .join("")}
 
   <!-- Next Visit / Re-checkup Date Section (Only if date is provided) -->
-  ${
-    formattedNextVisitDate
+  ${formattedNextVisitDate
       ? `
     <div class="next-visit-box">
       <div class="next-visit-left">
@@ -757,7 +814,7 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
     </div>
   `
       : ""
-  }
+    }
 
   <!-- Main Report Page Footer -->
   <div class="report-footer">
@@ -772,14 +829,12 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
     <!-- Disclaimer Page Header -->
     <div class="report-header" style="margin-bottom: 20px;">
       <div class="header-brand">
-        ${
-          franchise.logo_url
-            ? `<img src="${franchise.logo_url}" alt="Logo" style="height: 40px; max-width: 100px; object-fit: contain;" />`
-            : `<div class="brand-logo-seal" style="width: 44px; height: 44px; font-size: 18px;">UQ</div>`
-        }
+        ${franchise.logo_url
+      ? `<img src="${franchise.logo_url}" alt="Logo" style="height: 40px; max-width: 100px; object-fit: contain;" />`
+      : `<div class="brand-logo-seal" style="width: 44px; height: 44px; font-size: 18px;">UQ</div>`
+    }
         <div>
           <h2 class="brand-title" style="font-size: 15px;">${escapeHTML(franchise.name)}</h2>
-          <div class="brand-subtitle">${escapeHTML(labels.brandSubtitle)}</div>
         </div>
       </div>
       <div class="header-meta">
@@ -798,8 +853,8 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
 
       <div class="disclaimer-body">
         ${disclaimerParagraphs
-          .map((para) => `<p class="disclaimer-paragraph">${escapeHTML(para)}</p>`)
-          .join("")}
+      .map((para) => `<p class="disclaimer-paragraph">${escapeHTML(para)}</p>`)
+      .join("")}
       </div>
 
       <!-- Signature and Verification Seal Row -->
