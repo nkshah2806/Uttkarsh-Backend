@@ -1,8 +1,8 @@
 const http = require('http');
 
 const payload = JSON.stringify({
-  email: process.env.ADMIN_EMAIL || 'admin@uttkarsh.com',
-  password: process.env.ADMIN_PASSWORD || 'admin123456',
+  email: process.env.ADMIN_EMAIL || '',
+  password: process.env.ADMIN_PASSWORD || '',
 });
 
 const req = http.request(

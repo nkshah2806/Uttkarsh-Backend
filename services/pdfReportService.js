@@ -73,23 +73,23 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
       memberProfile?.store_name ||
       memberProfile?.member_name ||
       registeredBy?.fullName ||
-      "UTKARSH QUANTUM HEALTHCARE & WELLNESS",
+      "",
     phone:
       memberProfile?.phone ||
       registeredBy?.phoneNumber ||
       registeredBy?.mobileNumber ||
       siteSettings?.footer?.phone ||
-      "+91 99999 99999",
+      "",
     email:
       registeredBy?.email ||
       siteSettings?.footer?.email ||
-      "care@utkarshcorp.com",
+      "",
     address:
       memberProfile?.address ||
       (memberProfile?.city ? `${memberProfile.city}, ${memberProfile.state}` : "") ||
       siteSettings?.footer?.address ||
-      "Healthcare & Resonance Wellness Center",
-    logo_url: memberProfile?.store_logo || memberProfile?.logo_url || "https://utkarshcorporation.com/public/assets/images/logo.png",
+      "",
+    logo_url: memberProfile?.store_logo || memberProfile?.logo_url || "",
   };
 
   const consultant = visit.consultant_id || {
@@ -111,31 +111,10 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
   } else if (visit.report_snapshot?.disclaimer?.content) {
     disclaimer = visit.report_snapshot.disclaimer;
   } else {
-    // Default standard disclaimer fallback
     disclaimer = {
-      title: "Standard Clinical & Wellness Analysis Disclaimer",
-      content: `1. Informational & Screening Purpose:
-This Quantum Resonance Health Analysis Report is prepared solely for nutritional screening, bio-energetic wellness evaluation, and general health awareness. It is not intended to replace formal laboratory diagnostics, biochemical blood tests, radiological imaging, or clinical evaluations conducted by licensed medical practitioners.
-
-2. Non-Diagnostic Classification:
-The parameters, observed values, and status indicators presented in this report represent cellular resonance patterns and bio-electric feedback. They do not constitute a definitive medical diagnosis of any disease, chronic syndrome, or acute pathological condition.
-
-3. Professional Medical Advice:
-Patients and clients are strictly advised not to initiate, alter, or discontinue any prescribed pharmacological treatments, prescription medications, or medical regimens based solely on the findings of this report. Always consult a qualified physician, Ayurvedic doctor, or certified healthcare provider before undertaking dietary supplements, herbal therapies, or lifestyle modifications.
-
-4. Limitation of Liability:
-Utkarsh Corporation, its authorized franchise partners, consultants, and affiliates accept no liability for any direct, indirect, incidental, or consequential health outcomes resulting from the self-interpretation or unauthorized misuse of this report.`,
-      content_hi: `1. सूचनात्मक एवं स्वास्थ्य जागरूकता उद्देश्य:
-यह क्वांटम रेजोनेंस स्वास्थ्य विश्लेषण रिपोर्ट केवल पोषण संबंधी स्क्रीनिंग, जैव-ऊर्जा मूल्यांकन और सामान्य स्वास्थ्य जागरूकता के उद्देश्य से तैयार की गई है। यह किसी भी प्रकार के औपचारिक प्रयोगशाला परीक्षण, रक्त जांच या योग्य चिकित्सक द्वारा किए जाने वाले नैदानिक परीक्षण का विकल्प नहीं है।
-
-2. गैर-निदान वर्गीकरण:
-इस रिपोर्ट में दर्शाए गए मापदंड और मान कोशिकीय ऊर्जा प्रतिक्रिया पर आधारित हैं। इन्हें किसी बीमारी या चिकित्सीय स्थिति का अंतिम निदान नहीं माना जाना चाहिए।
-
-3. चिकित्सीय परामर्श की अनिवार्यता:
-मरीज या ग्राहक को सलाह दी जाती है कि वे इस रिपोर्ट के आधार पर किसी भी पूर्व-निर्धारित दवा, उपचार या चिकित्सा सलाह को न तो बंद करें और न ही स्वयं कोई नया उपचार शुरू करें। किसी भी आयुर्वेदिक औषधि, पूरक आहार या जीवनशैली में बदलाव करने से पहले अपने पंजीकृत चिकित्सक या योग्य परामर्शदाता से परामर्श अवश्य लें।
-
-4. दायित्व की सीमा:
-उत्कर्ष कॉर्पोरेशन, इसके अधिकृत केंद्र, परामर्शदाता एवं सहयोगी इस रिपोर्ट के स्व-व्याख्या या अनुचित उपयोग से होने वाले किसी भी प्रत्यक्ष या अप्रत्यक्ष परिणाम के लिए उत्तरदायी नहीं होंगे।`,
+      title: "",
+      content: "",
+      content_hi: "",
     };
   }
 
@@ -849,7 +828,7 @@ Utkarsh Corporation, its authorized franchise partners, consultants, and affilia
         <span>⚠</span> ${escapeHTML(labels.disclaimerHeading)}
       </div>
       <h2 class="disclaimer-heading">${escapeHTML(labels.disclaimerHeading)}</h2>
-      <div class="disclaimer-title-sub">${escapeHTML(disclaimer.title || "Standard Clinical & Wellness Analysis Disclaimer")}</div>
+      <div class="disclaimer-title-sub">${escapeHTML(disclaimer.title || "")}</div>
 
       <div class="disclaimer-body">
         ${disclaimerParagraphs

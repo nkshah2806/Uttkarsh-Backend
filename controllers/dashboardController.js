@@ -59,6 +59,14 @@ exports.getOverview = async (req, res) => {
             Boolean(user.isAdmin) ||
             ["SUPER_ADMIN", "ADMIN"].includes(user.role);
         const scope = req.franchiseFilter || {};
+        const isAdminScope = !scope || Object.keys(scope).length === 0;
+
+        // Visit/Report records do not carry `registered_by` (they reference the
+        // patient), so translate the member scope to scoped patient ids first.
+        const scopedPatientIds = isAdminScope
+            ? []
+            : await Patient.find(scope).distinct("_id");
+        const visitScope = isAdminScope ? {} : { patient_id: { $in: scopedPatientIds } };
 
         const now = new Date();
         const dayStart = startOfDay(now);
@@ -66,11 +74,10 @@ exports.getOverview = async (req, res) => {
         const monthStart = startOfMonth(now);
         const tomorrowStart = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
-        // Reports do not carry franchise_id, so resolve scoped visit ids first.
-        const isAdminScope = !scope || Object.keys(scope).length === 0;
+        // Reports do not carry patient/franchise data, so resolve scoped visit ids first.
         let scopeVisitIds = [];
         if (!isAdminScope) {
-            scopeVisitIds = await Visit.find(scope).distinct("_id");
+            scopeVisitIds = await Visit.find(visitScope).distinct("_id");
         }
         const reportBase = isAdminScope
             ? {}
@@ -94,21 +101,21 @@ exports.getOverview = async (req, res) => {
             Patient.countDocuments({ ...scope, createdAt: { $gte: dayStart } }),
             Patient.countDocuments({ ...scope, createdAt: { $gte: weekStart } }),
             Patient.countDocuments({ ...scope, createdAt: { $gte: monthStart } }),
-            Visit.countDocuments(scope),
+            Visit.countDocuments(visitScope),
             Report.countDocuments(reportBase),
             Report.countDocuments({ ...reportBase, generated_at: { $gte: dayStart } }),
             Report.countDocuments({ ...reportBase, generated_at: { $gte: weekStart } }),
             Report.countDocuments({ ...reportBase, generated_at: { $gte: monthStart } }),
             Visit.countDocuments({
-                ...scope,
+                ...visitScope,
                 next_visit_date: { $gte: new Date(0), $lt: dayStart },
             }),
-            Visit.countDocuments({ ...scope, next_visit_date: { $gte: dayStart, $lt: tomorrowStart } }),
+            Visit.countDocuments({ ...visitScope, next_visit_date: { $gte: dayStart, $lt: tomorrowStart } }),
         ]);
 
         // Visit status breakdown
         const visitStatusAgg = await Visit.aggregate([
-            { $match: scope },
+            { $match: visitScope },
             { $group: { _id: "$status", count: { $sum: 1 } } },
         ]);
         const visitStatusMap = {};
@@ -231,11 +238,11 @@ exports.getOverview = async (req, res) => {
                         select: "status patient_id",
                         populate: { path: "patient_id", select: "name patient_code mobile" },
                     }),
-                Visit.find({ ...scope, status: { $in: ["DATA_ENTRY", "REPORT_READY"] } })
+                Visit.find({ ...visitScope, status: { $in: ["DATA_ENTRY", "REPORT_READY"] } })
                     .sort({ createdAt: -1 })
                     .limit(6)
                     .populate("patient_id", "name patient_code mobile"),
-                Visit.find({ ...scope, next_visit_date: { $gte: dayStart } })
+                Visit.find({ ...visitScope, next_visit_date: { $gte: dayStart } })
                     .sort({ next_visit_date: 1 })
                     .limit(6)
                     .populate("patient_id", "name patient_code mobile"),

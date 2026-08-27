@@ -65,7 +65,7 @@ async function runTests() {
     };
 
     await disclaimerController.createDisclaimer(mockReq2, mockRes2);
-    console.log("  ✓ Created Disclaimer 2 via controller with is_active: true");
+    console.log("✅ Created Disclaimer 2 via controller with is_active: true");
 
     // Verify Disclaimer 1 is now inactive
     const checkD1 = await Disclaimer.findById(d1._id);

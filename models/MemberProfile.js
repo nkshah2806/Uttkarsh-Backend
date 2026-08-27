@@ -143,6 +143,36 @@ const memberProfileSchema = new mongoose.Schema(
       min: 0,
       max: 100,
     },
+
+    // Admin Approval Workflow
+    // States: pending -> approved | rejected (editing a rejected profile returns to pending)
+    approval_status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+    rejection_reason: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    submitted_for_approval: {
+      type: Boolean,
+      default: false,
+    },
+    submitted_at: {
+      type: Date,
+      default: null,
+    },
+    reviewed_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    reviewed_at: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

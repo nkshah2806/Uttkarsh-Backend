@@ -6,6 +6,42 @@ const VisitSelectedContent = require("../models/VisitSelectedContent");
 const Report = require("../models/Report");
 const { generateAutoAnalysis } = require("../services/analysisEngine");
 const { generateReportHTML } = require("../services/pdfReportService");
+const { isAdminUser } = require("../middleware/authMiddleware");
+
+// Admins can access every record. Non-admin members may only access visits
+// belonging to patients they personally registered (registered_by === user._id).
+const canAccessVisit = (req, visit) => {
+  if (!visit) return false;
+  if (isAdminUser(req.user)) return true;
+  const patient = visit.patient_id || {};
+  const registeredById =
+    patient.registered_by?._id?.toString() ||
+    patient.registered_by?.toString();
+  return registeredById === String(req.user._id);
+};
+
+// Loads a visit (with its patient's registered_by) and verifies the requesting
+// user may access it. Returns the visit on success, or sends a 403/404 response
+// and returns null when access is not permitted.
+const loadOwnedVisit = async (req, res) => {
+  const visit = await Visit.findById(req.params.id).populate({
+    path: "patient_id",
+    select: "name patient_code mobile registered_by",
+    populate: { path: "registered_by", select: "_id fullName" },
+  });
+  if (!visit) {
+    res.status(404).json({ success: false, message: "Visit not found" });
+    return null;
+  }
+  if (!canAccessVisit(req, visit)) {
+    res.status(403).json({
+      success: false,
+      message: "You are not authorized to access this visit",
+    });
+    return null;
+  }
+  return visit;
+};
 
 // @desc Create a visit
 // @route POST /api/v1/visits
@@ -15,8 +51,22 @@ exports.createVisit = async (req, res) => {
     const patient = await Patient.findById(patient_id);
     if (!patient) return res.status(404).json({ success: false, message: "Patient not found" });
 
+    // Non-admin members may only create visits for their own patients
+    if (!isAdminUser(req.user)) {
+      const registeredById =
+        patient.registered_by?._id?.toString() ||
+        patient.registered_by?.toString();
+      if (registeredById !== String(req.user._id)) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to create a visit for this patient",
+        });
+      }
+    }
+
     const visit = await Visit.create({
       patient_id,
+      franchise_id: patient.franchise_id || req.user.franchise_id || null,
       consultant_id: consultant_id || req.user._id,
       status: "DATA_ENTRY",
     });
@@ -39,6 +89,13 @@ exports.getVisitById = async (req, res) => {
       .populate("consultant_id", "fullName email");
     if (!visit) return res.status(404).json({ success: false, message: "Visit not found" });
 
+    if (!canAccessVisit(req, visit)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to view this visit",
+      });
+    }
+
     const results = await VisitParameterResult.find({ visit_id: req.params.id }).populate(
       "parameter_id"
     );
@@ -53,6 +110,9 @@ exports.getVisitById = async (req, res) => {
 // @route POST /api/v1/visits/:id/results
 exports.saveVisitResults = async (req, res) => {
   try {
+    const ownedVisit = await loadOwnedVisit(req, res);
+    if (!ownedVisit) return;
+
     const { results } = req.body; // array of { parameter_id, raw_value }
     if (!Array.isArray(results)) {
       return res.status(400).json({ success: false, message: "results must be an array" });
@@ -124,6 +184,9 @@ exports.importCSVResults = async (req, res) => {
 // @route GET /api/v1/visits/:id/auto-report
 exports.getAutoReport = async (req, res) => {
   try {
+    const ownedVisit = await loadOwnedVisit(req, res);
+    if (!ownedVisit) return;
+
     const analysis = await generateAutoAnalysis(req.params.id);
     return res.json({ success: true, data: analysis });
   } catch (error) {
@@ -135,6 +198,9 @@ exports.getAutoReport = async (req, res) => {
 // @route PATCH /api/v1/visits/:id/selected-content
 exports.updateSelectedContent = async (req, res) => {
   try {
+    const ownedVisit = await loadOwnedVisit(req, res);
+    if (!ownedVisit) return;
+
     const { selections, next_visit_date } = req.body;
 
     if (next_visit_date !== undefined) {
@@ -212,6 +278,9 @@ exports.updateSelectedContent = async (req, res) => {
 // @route POST /api/v1/visits/:id/generate-pdf
 exports.generatePDF = async (req, res) => {
   try {
+    const ownedVisit = await loadOwnedVisit(req, res);
+    if (!ownedVisit) return;
+
     const { lang, next_visit_date } = req.body; // 'hi' or 'en'
     const selectedLang = lang === "hi" ? "hi" : "en";
 
@@ -239,9 +308,16 @@ exports.shareWhatsApp = async (req, res) => {
   try {
     const report = await Report.findById(req.params.id).populate({
       path: "visit_id",
-      populate: { path: "patient_id" },
+      populate: { path: "patient_id", populate: { path: "registered_by" } },
     });
     if (!report) return res.status(404).json({ success: false, message: "Report not found" });
+
+    if (!canAccessVisit(req, report.visit_id)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to share this report",
+      });
+    }
 
     const patient = report.visit_id.patient_id;
     const phone = patient.mobile.replace(/\D/g, "");
@@ -268,6 +344,13 @@ exports.getDetailedReport = async (req, res) => {
       .populate("consultant_id", "fullName email username role");
 
     if (!visit) return res.status(404).json({ success: false, message: "Visit not found" });
+
+    if (!canAccessVisit(req, visit)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to access this visit",
+      });
+    }
 
     // Fetch all evaluated parameters with their master info
     const rawResults = await VisitParameterResult.find({ visit_id: req.params.id })

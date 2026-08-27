@@ -28,7 +28,7 @@ const parameterMasterContentSchema = new mongoose.Schema(
     },
     text_hi: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
     },
     text_en: {

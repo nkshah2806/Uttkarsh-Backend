@@ -40,7 +40,7 @@ const parameterSchema = new mongoose.Schema(
     },
     name_hi: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
     },
     name_en: {

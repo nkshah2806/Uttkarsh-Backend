@@ -49,7 +49,11 @@ exports.protect = async (req, res, next) => {
     req.member = user;
     req.admin = user;
 
-    // Set default franchise scope filter based on user role
+    // Set default data scope filter based on user role.
+    // Admins see all records. Non-admin members (Franchise, Consultant,
+    // Operator, Trainer, Patient) see ONLY the patients they personally
+    // registered (via `registered_by`). This is enforced at the database
+    // level so direct ID/URL manipulation cannot bypass it.
     const isAdminUser =
       user.isAdmin ||
       user.role === "SUPER_ADMIN" ||
@@ -57,10 +61,9 @@ exports.protect = async (req, res, next) => {
 
     if (isAdminUser) {
       req.franchiseFilter = {};
-    } else if (user.franchise_id) {
-      req.franchiseFilter = { franchise_id: user.franchise_id };
     } else {
-      req.franchiseFilter = { _id: null }; // block unassigned non-admins
+      // Franchise members ONLY see patients registered by them
+      req.franchiseFilter = { registered_by: user._id };
     }
 
     next();
@@ -126,4 +129,59 @@ exports.verifyAdminToken = (req, res, next) => {
   exports.protect(req, res, () => {
     exports.adminOnly(req, res, next);
   });
+};
+
+/**
+ * approvedMemberOnly
+ * Restricts non-admin members (Franchise, Consultant, Operator, Trainer,
+ * Patient) from accessing business routes until their MemberProfile is
+ * complete AND approved by an admin. Admins always pass.
+ *
+ * This is the backend guard for the "Profile completion & admin approval"
+ * workflow: even if a member manually navigates to a protected URL or calls
+ * the API directly with a valid token, they are blocked until approved.
+ */
+exports.approvedMemberOnly = async (req, res, next) => {
+  if (exports.isAdminUser(req.user)) {
+    return next();
+  }
+
+  try {
+    const MemberProfile = require("../models/MemberProfile");
+    const profile = await MemberProfile.findOne({ user: req.user._id }).lean();
+
+    const profile_completed = Boolean(profile?.profile_completed);
+    const approval_status = profile?.approval_status || "pending";
+
+    if (!profile_completed || approval_status !== "approved") {
+      return res.status(403).json({
+        success: false,
+        message:
+          approval_status === "rejected"
+            ? "Your member profile was rejected. Please review the rejection reason and resubmit your profile."
+            : "Your member profile is pending admin approval. Please complete your profile and wait for approval.",
+        code: "MEMBER_PROFILE_NOT_APPROVED",
+        approval_status,
+        profile_completed,
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error("Error in approvedMemberOnly middleware:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to verify member profile approval status",
+    });
+  }
+};
+
+// Helper: returns true when the authenticated user is an admin (SUPER_ADMIN / ADMIN / isAdmin).
+exports.isAdminUser = (user) => {
+  if (!user) return false;
+  return (
+    Boolean(user.isAdmin) ||
+    user.role === "SUPER_ADMIN" ||
+    user.role === "ADMIN"
+  );
 };

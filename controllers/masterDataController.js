@@ -240,7 +240,7 @@ exports.duplicateParameter = async (req, res) => {
     const cloned = await Parameter.create({
       code: newCode,
       name_en: `${source.name_en} (Copy)`,
-      name_hi: `${source.name_hi} (प्रति)`,
+      name_hi: source.name_hi ? `${source.name_hi} (प्रति)` : "",
       unit: source.unit,
       normal_min: source.normal_min,
       normal_max: source.normal_max,

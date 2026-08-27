@@ -92,12 +92,17 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["SUPER_ADMIN", "ADMIN", "FRANCHISE", "CONSULTANT", "OPERATOR", "TRAINER", "PATIENT"],
-      default: "ADMIN",
+      enum: ["ADMIN", "FRANCHISE"],
+      default: "FRANCHISE",
+    },
+    approval_status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
     },
     language_pref: {
       type: String,
-      enum: ["hi", "en"],
+      enum: ["en", "hi", "gu"],
       default: "en",
     },
     jwtToken: {

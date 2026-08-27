@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { protect } = require("../middleware/authMiddleware");
+const { protect, approvedMemberOnly } = require("../middleware/authMiddleware");
 const {
   createVisit,
   getVisitById,
@@ -14,6 +14,9 @@ const {
 } = require("../controllers/visitController");
 
 router.use(protect);
+// Franchise members must be approved before accessing visits/reports
+// (admins bypass this check).
+router.use(approvedMemberOnly);
 
 router.post("/", createVisit);
 router.get("/:id", getVisitById);

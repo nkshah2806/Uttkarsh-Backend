@@ -4,6 +4,19 @@ const Visit = require("../models/Visit");
 const VisitParameterResult = require("../models/VisitParameterResult");
 const VisitSelectedContent = require("../models/VisitSelectedContent");
 const Report = require("../models/Report");
+const { isAdminUser } = require("../middleware/authMiddleware");
+
+// Returns true when the requesting user is allowed to access the given patient.
+// Admins can access every patient; non-admin members may only access patients
+// they personally registered (registered_by === user._id).
+const canAccessPatient = (req, patient) => {
+  if (!patient) return false;
+  if (isAdminUser(req.user)) return true;
+  const registeredById =
+    patient.registered_by?._id?.toString() ||
+    patient.registered_by?.toString();
+  return registeredById === String(req.user._id);
+};
 
 // @desc Get patients (scoped by role/franchise or member filter) with latest visit stats
 // @route GET /api/v1/patients
@@ -12,7 +25,9 @@ exports.getPatients = async (req, res) => {
     const { search, registered_by } = req.query;
     let query = { ...req.franchiseFilter };
 
-    if (registered_by) {
+    // Non-admin members can never override the scope with a registered_by
+    // query param (prevents fetching other members' patients via URL/API).
+    if (registered_by && isAdminUser(req.user)) {
       query.registered_by = registered_by;
     }
 
@@ -77,6 +92,14 @@ exports.getPatientById = async (req, res) => {
 
     if (!patient) {
       return res.status(404).json({ success: false, message: "Patient not found" });
+    }
+
+    // Enforce ownership: non-admin members can only view their own patients
+    if (!canAccessPatient(req, patient)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to view this patient",
+      });
     }
 
     // Fetch all visits for this patient
@@ -198,6 +221,7 @@ exports.createPatient = async (req, res) => {
       height_unit: height_unit || "cm",
       address: address ? String(address).trim() : "",
       registered_by: req.user._id,
+      franchise_id: req.user.franchise_id || null,
     });
 
     const populatedPatient = await Patient.findById(patient._id).populate(
@@ -218,6 +242,14 @@ exports.updatePatient = async (req, res) => {
     const patient = await Patient.findById(req.params.id);
     if (!patient) {
       return res.status(404).json({ success: false, message: "Patient not found" });
+    }
+
+    // Enforce ownership: non-admin members can only update their own patients
+    if (!canAccessPatient(req, patient)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to update this patient",
+      });
     }
 
     const {
@@ -278,10 +310,20 @@ exports.updatePatient = async (req, res) => {
 // @route DELETE /api/v1/patients/:id
 exports.deletePatient = async (req, res) => {
   try {
-    const patient = await Patient.findByIdAndDelete(req.params.id);
+    const patient = await Patient.findById(req.params.id);
     if (!patient) {
       return res.status(404).json({ success: false, message: "Patient not found" });
     }
+
+    // Enforce ownership: non-admin members can only delete their own patients
+    if (!canAccessPatient(req, patient)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to delete this patient",
+      });
+    }
+
+    await Patient.findByIdAndDelete(req.params.id);
     return res.json({ success: true, message: "Patient record deleted successfully" });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

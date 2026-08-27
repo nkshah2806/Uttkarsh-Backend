@@ -56,6 +56,12 @@ exports.getMemberProfile = async (req, res) => {
           branch_address: "",
           profile_completed: false,
           completion_percentage: 0,
+          approval_status: "pending",
+          rejection_reason: "",
+          submitted_for_approval: false,
+          submitted_at: null,
+          reviewed_by: null,
+          reviewed_at: null,
         },
       });
     }
@@ -216,6 +222,15 @@ exports.createOrUpdateProfile = async (req, res) => {
     const completion_percentage = Math.round((filledCount / requiredCheck.length) * 100);
     const profile_completed = filledCount === requiredCheck.length;
 
+    // Approval workflow transitions:
+    // - Saving profile details always (re)submits the profile for admin approval.
+    // - A completed profile moves to "pending"; any edit (even to an approved or
+    //   rejected profile) returns it to the approval workflow and clears the
+    //   previous review outcome so the admin must review the latest submission.
+    const approval_status = profile_completed ? "pending" : existingProfile?.approval_status || "pending";
+    const submitted_for_approval = profile_completed;
+    const submitted_at = profile_completed ? new Date() : existingProfile?.submitted_at || null;
+
     const updatePayload = {
       user: userId,
       member_id: userId.toString(),
@@ -243,6 +258,13 @@ exports.createOrUpdateProfile = async (req, res) => {
       branch_address: branch_address || "",
       profile_completed,
       completion_percentage,
+      approval_status,
+      submitted_for_approval,
+      submitted_at,
+      // Clear any previous review outcome whenever the member resubmits/edits the profile
+      rejection_reason: profile_completed ? "" : (existingProfile?.rejection_reason || ""),
+      reviewed_by: profile_completed ? null : (existingProfile?.reviewed_by || null),
+      reviewed_at: profile_completed ? null : (existingProfile?.reviewed_at || null),
     };
 
     const savedProfile = await MemberProfile.findOneAndUpdate(
@@ -273,6 +295,186 @@ exports.createOrUpdateProfile = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to save member profile",
+    });
+  }
+};
+
+/**
+ * GET /api/member/profile/admin/members
+ * Admin only. Lists member profiles with approval status so the admin can
+ * review submissions. Supports filtering by status via query param (?status=).
+ */
+exports.getMemberProfilesForAdmin = async (req, res) => {
+  try {
+    const { status } = req.query;
+
+    const filter = {};
+    if (status && ["pending", "approved", "rejected"].includes(status)) {
+      filter.approval_status = status;
+    }
+
+    const profiles = await MemberProfile.find(filter)
+      .populate("user", "fullName email role isActive isAdmin")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: profiles.length,
+      data: profiles,
+    });
+  } catch (error) {
+    console.error("Error listing member profiles for admin:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch member profiles",
+    });
+  }
+};
+
+/**
+ * GET /api/member/profile/admin/members/:id
+ * Admin only. Returns the full member profile (with user) for the review screen.
+ */
+exports.getMemberProfileForAdmin = async (req, res) => {
+  try {
+    const profile = await MemberProfile.findById(req.params.id)
+      .populate("user", "fullName email role phoneNumber mobileNumber isActive isAdmin language_pref")
+      .lean();
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: "Member profile not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: profile,
+    });
+  } catch (error) {
+    console.error("Error fetching member profile for admin:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch member profile",
+    });
+  }
+};
+
+/**
+ * PATCH /api/member/profile/admin/members/:id/review
+ * Admin only. Approves or rejects a member's submitted profile.
+ * Body: { action: "approved" | "rejected", rejection_reason?: string }
+ */
+exports.reviewMemberProfile = async (req, res) => {
+  try {
+    const { action, rejection_reason } = req.body;
+
+    if (!action || !["approved", "rejected"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid action. Use 'approved' or 'rejected'",
+      });
+    }
+
+    const profile = await MemberProfile.findById(req.params.id);
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: "Member profile not found",
+      });
+    }
+
+    if (!profile.submitted_for_approval && !profile.profile_completed) {
+      return res.status(400).json({
+        success: false,
+        message: "This member profile is not complete and cannot be reviewed",
+      });
+    }
+
+    const adminUserId = req.user._id || req.user.id;
+
+    if (action === "rejected") {
+      const reason = (rejection_reason || "").toString().trim();
+      if (!reason) {
+        return res.status(400).json({
+          success: false,
+          message: "A rejection reason is required when rejecting a profile",
+        });
+      }
+      profile.approval_status = "rejected";
+      profile.rejection_reason = reason;
+    } else {
+      profile.approval_status = "approved";
+      profile.rejection_reason = "";
+    }
+
+    profile.reviewed_by = adminUserId;
+    profile.reviewed_at = new Date();
+
+    await profile.save();
+
+    // Keep the User record's language preference flag consistent is not needed here,
+    // but ensure the linked user remains active once approved.
+    if (action === "approved") {
+      await User.findByIdAndUpdate(profile.user, { isActive: true });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        action === "approved"
+          ? "Member profile approved successfully"
+          : "Member profile rejected",
+      data: profile,
+    });
+  } catch (error) {
+    console.error("Error reviewing member profile:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to review member profile",
+    });
+  }
+};
+
+/**
+ * GET /api/member/profile/admin/user/:userId
+ * Admin only. Returns the member profile linked to a given User record, or a
+ * 404 when the user has not yet completed their franchise profile. Used by the
+ * Admin User Details page to show Franchise Information.
+ */
+exports.getMemberProfileByUserForAdmin = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const profile = await MemberProfile.findOne({ user: userId })
+      .populate("user", "fullName email role phoneNumber mobileNumber isActive isAdmin language_pref approval_status")
+      .lean();
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: "No franchise profile found for this user",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: profile,
+    });
+  } catch (error) {
+    console.error("Error fetching member profile by user:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch member profile",
     });
   }
 };
