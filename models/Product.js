@@ -48,6 +48,14 @@ const productSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    ingredients: {
+      type: String,
+      default: "",
+    },
+    usage: {
+      type: String,
+      default: "",
+    },
     images: [
       {
         type: String,

@@ -9,6 +9,7 @@ const {
   updateUser,
   deleteUser,
   approveUser,
+  getMemberPortalPassword,
 } = require("../controllers/userController");
 const { protect, adminOnly } = require("../middleware/authMiddleware");
 
@@ -25,6 +26,9 @@ router.get("/me", protect, getMe);
 // getUserById and updateUser allow admins, or a member acting on their own
 // record (e.g. language preference persistence in the member panel).
 router.get("/", protect, getUsers);
+// Admin-only: decrypt and return the member's portal login password.
+// MUST be declared before the generic `/:id` route so `:id` does not match it.
+router.get("/:id/portal-password", protect, adminOnly, getMemberPortalPassword);
 router.get("/:id", protect, getUserById);
 router.post("/", protect, adminOnly, createUser);
 router.put("/update", protect, updateUser);

@@ -146,6 +146,16 @@ exports.approvedMemberOnly = async (req, res, next) => {
     return next();
   }
 
+  // Account must be active for full portal access. An inactive (deactivated)
+  // account is blocked regardless of profile completion / approval status.
+  if (req.user && req.user.isActive === false) {
+    return res.status(403).json({
+      success: false,
+      message: "Account is inactive. Please contact the administrator.",
+      code: "ACCOUNT_INACTIVE",
+    });
+  }
+
   try {
     const MemberProfile = require("../models/MemberProfile");
     const profile = await MemberProfile.findOne({ user: req.user._id }).lean();

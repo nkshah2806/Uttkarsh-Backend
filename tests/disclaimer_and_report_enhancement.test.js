@@ -148,7 +148,7 @@ async function runTests() {
 
     // Validations on report HTML:
     // 1. Next Visit Date present
-    if (!reportHtml.includes("20/09/2026") || !reportHtml.includes("Next Visit / Re-checkup Date")) {
+    if (!reportHtml.includes("20/09/2026") || !reportHtml.includes("Suggested Wellness Reassessment Date")) {
       throw new Error("Next visit date formatting missing from report HTML");
     }
     console.log("  ✓ Next Visit Date properly rendered as DD/MM/YYYY ('20/09/2026')");

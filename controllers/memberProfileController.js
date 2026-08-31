@@ -1,6 +1,7 @@
 const MemberProfile = require("../models/MemberProfile");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const passwordCryptoService = require("../services/passwordCryptoService");
 
 // Generate helper codes
 const generateDistributorId = (userId) => {
@@ -62,13 +63,17 @@ exports.getMemberProfile = async (req, res) => {
           submitted_at: null,
           reviewed_by: null,
           reviewed_at: null,
+          is_active: req.user.isActive !== false,
         },
       });
     }
 
     return res.status(200).json({
       success: true,
-      data: profile,
+      data: {
+        ...profile.toObject ? profile.toObject() : profile,
+        is_active: req.user.isActive !== false,
+      },
     });
   } catch (error) {
     console.error("Error fetching member profile:", error);
@@ -149,16 +154,27 @@ exports.createOrUpdateProfile = async (req, res) => {
       });
     }
 
-    // Check duplicate email or phone for other profiles
+    // Check duplicate email or phone for other profiles.
+    // A conflicting profile only blocks the save when its owner (the linked
+    // User record) still exists. Profiles left behind by deleted users are
+    // orphaned and must not prevent a new member from using their own phone
+    // number / email address, so they are cleaned up automatically instead.
+    const ownerStillExists = async (profile) =>
+      Boolean(profile && (await User.exists({ _id: profile.user })));
+
     const existingPhone = await MemberProfile.findOne({
       phone,
       user: { $ne: userId },
     });
     if (existingPhone) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone number is already associated with another member profile",
-      });
+      if (await ownerStillExists(existingPhone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number is already associated with another member profile",
+        });
+      }
+      // Owner no longer exists → orphaned profile, remove it and continue.
+      await MemberProfile.deleteOne({ _id: existingPhone._id });
     }
 
     const existingEmail = await MemberProfile.findOne({
@@ -166,10 +182,14 @@ exports.createOrUpdateProfile = async (req, res) => {
       user: { $ne: userId },
     });
     if (existingEmail) {
-      return res.status(400).json({
-        success: false,
-        message: "Email address is already associated with another member profile",
-      });
+      if (await ownerStillExists(existingEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: "Email address is already associated with another member profile",
+        });
+      }
+      // Owner no longer exists → orphaned profile, remove it and continue.
+      await MemberProfile.deleteOne({ _id: existingEmail._id });
     }
 
     // Optional Password update handling
@@ -191,6 +211,9 @@ exports.createOrUpdateProfile = async (req, res) => {
       const user = await User.findById(userId);
       if (user) {
         user.password = password;
+        // Reversibly encrypted copy so an admin can view the member's portal
+        // password from the Admin User Details page.
+        user.passwordEncrypted = passwordCryptoService.encrypt(password);
         await user.save();
       }
     }

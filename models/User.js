@@ -135,6 +135,15 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    // Reversibly encrypted copy of the plaintext password, used ONLY so that
+    // an admin can retrieve a member's portal login password. The live
+    // authentication password remains the bcrypt hash in `password`.
+    // `select: false` keeps it out of all normal queries.
+    passwordEncrypted: {
+      type: String,
+      default: "",
+      select: false,
+    },
   },
   {
     timestamps: true,
