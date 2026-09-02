@@ -4,6 +4,7 @@ const Parameter = require("../models/Parameter");
 const VisitParameterResult = require("../models/VisitParameterResult");
 const VisitSelectedContent = require("../models/VisitSelectedContent");
 const Report = require("../models/Report");
+const Medicine = require("../models/Medicine");
 const { generateAutoAnalysis } = require("../services/analysisEngine");
 const { generateReportHTML } = require("../services/pdfReportService");
 const { isAdminUser } = require("../middleware/authMiddleware");
@@ -194,18 +195,97 @@ exports.getAutoReport = async (req, res) => {
   }
 };
 
-// @desc Update consultant content selection overrides and optional next visit date
+// @desc Update consultant content selection overrides, optional next visit date,
+//       selected medicines and an optional note
 // @route PATCH /api/v1/visits/:id/selected-content
 exports.updateSelectedContent = async (req, res) => {
   try {
     const ownedVisit = await loadOwnedVisit(req, res);
     if (!ownedVisit) return;
 
-    const { selections, next_visit_date } = req.body;
+    const { selections, next_visit_date, medicines, note, parameter_medicines } = req.body;
 
     if (next_visit_date !== undefined) {
       await Visit.findByIdAndUpdate(req.params.id, {
         next_visit_date: next_visit_date ? new Date(next_visit_date) : null,
+      });
+    }
+
+    // Persist medicine selection + optional note on the visit. Each selected
+    // medicine stores a snapshot of its master data so later edits or
+    // deactivations never alter previously generated reports.
+    if (medicines !== undefined || note !== undefined) {
+      const visitUpdate = {};
+
+      if (medicines !== undefined && Array.isArray(medicines)) {
+        const medicineIds = [...new Set(medicines.map((m) => String(m?._id || m)))].filter(Boolean);
+        let medicineSnapshot = [];
+
+        if (medicineIds.length > 0) {
+          const found = await Medicine.find({ _id: { $in: medicineIds } });
+          const foundMap = new Map(found.map((m) => [String(m._id), m]));
+          // Preserve the order chosen by the consultant
+          medicineSnapshot = medicineIds
+            .map((id) => foundMap.get(id))
+            .filter(Boolean)
+            .map((m) => ({
+              medicine_id: m._id,
+              name_snapshot: m.name || "",
+              details_snapshot: m.details || "",
+              dosage_snapshot: m.dosage || "",
+            }));
+        }
+
+        visitUpdate.medicines = medicineSnapshot;
+      }
+
+      if (note !== undefined) {
+        visitUpdate.medicine_note = typeof note === "string" ? note.trim() : "";
+      }
+
+      await Visit.findByIdAndUpdate(req.params.id, visitUpdate);
+    }
+
+    // Persist point-wise (per-parameter) medicine selection + note. Each entry
+    // carries the parameter_id and a list of medicine ids/objects plus an
+    // optional note. Snapshots are resolved from the Medicine master so later
+    // edits/deactivations never alter previously generated reports.
+    if (parameter_medicines !== undefined && Array.isArray(parameter_medicines)) {
+      const resolvedParameterMedicines = [];
+
+      for (const entry of parameter_medicines) {
+        if (!entry || !entry.parameter_id) continue;
+
+        const rawMeds = Array.isArray(entry.medicines) ? entry.medicines : [];
+        const medicineIds = [...new Set(rawMeds.map((m) => String(m?._id || m)))].filter(Boolean);
+        let medicineSnapshot = [];
+
+        if (medicineIds.length > 0) {
+          const found = await Medicine.find({ _id: { $in: medicineIds } });
+          const foundMap = new Map(found.map((m) => [String(m._id), m]));
+          // Preserve the order chosen by the consultant
+          medicineSnapshot = medicineIds
+            .map((id) => foundMap.get(id))
+            .filter(Boolean)
+            .map((m) => ({
+              medicine_id: m._id,
+              name_snapshot: m.name || "",
+              details_snapshot: m.details || "",
+              dosage_snapshot: m.dosage || "",
+            }));
+        }
+
+        if (medicineSnapshot.length === 0 && !entry.note) continue;
+
+        resolvedParameterMedicines.push({
+          parameter_id: entry.parameter_id,
+          medicines: medicineSnapshot,
+          note: typeof entry.note === "string" ? entry.note.trim() : "",
+        });
+      }
+
+      await Visit.findByIdAndUpdate(req.params.id, {
+        parameter_medicines: resolvedParameterMedicines,
       });
     }
 

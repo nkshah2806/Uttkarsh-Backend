@@ -3,6 +3,7 @@ const Patient = require("../models/Patient");
 const MemberProfile = require("../models/MemberProfile");
 const Disclaimer = require("../models/Disclaimer");
 const SiteSettings = require("../models/SiteSettings");
+const Medicine = require("../models/Medicine");
 const { generateAutoAnalysis } = require("./analysisEngine");
 
 /**
@@ -143,6 +144,12 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
       : "Selected Wellness Information & Ayurvedic Lifestyle Guidance",
     nextVisitTitle: isHindi ? "सुझाई गई वेलनेस पुनर्मूल्यांकन तिथि" : "Suggested Wellness Reassessment Date",
     nextVisitLabel: isHindi ? "Suggested Wellness Reassessment Date" : "Suggested Wellness Reassessment Date",
+    medicinesTitle: isHindi ? "अनुशंसित औषधियाँ एवं वेलनेस सहायता" : "Recommended Medicines & Wellness Support",
+    medicinesSubtitle: isHindi ? "चयनित औषधियाँ एवं सेवन मार्गदर्शन" : "Selected Medicines & Usage Guidance",
+    medicineName: isHindi ? "औषधि का नाम" : "Medicine",
+    medicineDetails: isHindi ? "विवरण" : "Details",
+    medicineDosage: isHindi ? "मात्रा / सेवन विधि" : "Dosage / Usage",
+    medicineNoteLabel: isHindi ? "परामर्शदाता टिप्पणी" : "Consultant Note",
     disclaimerHeading: isHindi ? "अस्वीकरण (Disclaimer)" : "Disclaimer",
     footerNote: isHindi
       ? "उत्कर्ष क्वांटम वेलनेस प्रणाली द्वारा तैयार गोपनीय वेलनेस मूल्यांकन रिपोर्ट।"
@@ -175,6 +182,50 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
       };
     })
     .filter((p) => p.sections.length > 0);
+
+  // Resolve selected medicines for the report. Prefer the snapshot stored on the
+  // visit at selection time so later master-data edits/deactivations never alter
+  // already finalized reports. Fall back to the finalized snapshot when the
+  // visit-level selection is empty (e.g. re-rendering an older report).
+  let reportMedicines = (visit.medicines || []).map((m) => ({
+    medicine_id: m.medicine_id,
+    name: m.name_snapshot || "",
+    details: m.details_snapshot || "",
+    dosage: m.dosage_snapshot || "",
+  }));
+  if (reportMedicines.length === 0 && Array.isArray(visit.report_snapshot?.medicines)) {
+    reportMedicines = visit.report_snapshot.medicines.map((m) => ({
+      medicine_id: m.medicine_id,
+      name: m.name_snapshot || m.name || "",
+      details: m.details_snapshot || m.details || "",
+      dosage: m.dosage_snapshot || m.dosage || "",
+    }));
+  }
+  const medicineNote = visit.medicine_note || visit.report_snapshot?.medicine_note || "";
+
+  // Resolve point-wise (per-parameter) medicines for the report. Prefer the
+  // snapshot stored on the visit at selection time; fall back to the finalized
+  // snapshot so older reports re-render correctly.
+  const parameterMedicinesSource =
+    Array.isArray(visit.parameter_medicines) && visit.parameter_medicines.length > 0
+      ? visit.parameter_medicines
+      : Array.isArray(visit.report_snapshot?.parameter_medicines)
+        ? visit.report_snapshot.parameter_medicines
+        : [];
+  const paramMedicinesMap = {};
+  const paramMedNotesMap = {};
+  for (const entry of parameterMedicinesSource) {
+    if (!entry || !entry.parameter_id) continue;
+    const key = String(entry.parameter_id);
+    paramMedicinesMap[key] = (entry.medicines || []).map((m) => ({
+      medicine_id: m.medicine_id,
+      name: m.name_snapshot || m.name || "",
+      details: m.details_snapshot || m.details || "",
+      dosage: m.dosage_snapshot || m.dosage || "",
+    }));
+    paramMedNotesMap[key] = typeof entry.note === "string" ? entry.note : "";
+  }
+  const hasPerParameterMedicines = Object.keys(paramMedicinesMap).length > 0;
 
   // Format disclaimer paragraphs
   const rawDisclaimerText = isHindi && disclaimer.content_hi
@@ -545,6 +596,139 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
       letter-spacing: 0.3px;
     }
 
+    /* Recommended Medicines Section (Selected Medicines Only) */
+    .medicines-section {
+      margin: 18px 0;
+      padding: 14px 16px;
+      background: #fdf8ff;
+      border: 1.5px solid #e9d5ff;
+      border-radius: 10px;
+    }
+    /* Per-parameter medicine section rendered inside a parameter block */
+    .medicines-section.param-medicines-section {
+      margin: 12px 0 2px 0;
+      padding: 11px 13px;
+      background: #fcf9ff;
+      border: 1.5px solid #ede9fe;
+      border-radius: 8px;
+    }
+    .param-medicines-section .medicines-header {
+      padding-bottom: 6px;
+      margin-bottom: 8px;
+    }
+    .param-medicines-section .medicines-count {
+      width: 24px;
+      height: 24px;
+      font-size: 11px;
+    }
+    .medicines-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1.5px solid #e9d5ff;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    .medicines-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #6b21a8;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .medicines-subtitle {
+      font-size: 10px;
+      color: #7c3aed;
+      margin-top: 2px;
+    }
+    .medicines-count {
+      width: 28px;
+      height: 28px;
+      border-radius: 9999px;
+      background: #7c3aed;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .medicine-card {
+      border: 1px solid #f3e8ff;
+      background: #ffffff;
+      border-radius: 8px;
+      padding: 9px 12px;
+      margin-bottom: 8px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .medicine-card:last-of-type {
+      margin-bottom: 0;
+    }
+    .medicine-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .medicine-index {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      background: #ede9fe;
+      color: #6d28d9;
+      font-size: 10px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .medicine-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+    .medicine-row {
+      font-size: 10.5px;
+      color: #475569;
+      line-height: 1.5;
+      margin-top: 2px;
+    }
+    .medicine-label {
+      font-weight: 700;
+      color: #7c3aed;
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.3px;
+    }
+    .medicine-note {
+      margin-top: 10px;
+      padding: 9px 12px;
+      background: #f5f3ff;
+      border-left: 3px solid #a78bfa;
+      border-radius: 6px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .medicine-note-label {
+      font-size: 9.5px;
+      font-weight: 800;
+      color: #6d28d9;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 3px;
+    }
+    .medicine-note-text {
+      font-size: 11px;
+      color: #3730a3;
+      line-height: 1.55;
+      white-space: pre-line;
+    }
+
     /* Dedicated Disclaimer Page */
     .disclaimer-page {
       page-break-before: always;
@@ -738,6 +922,9 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
   ${filteredParameters
       .map((item) => {
         const p = item.parameter;
+        const paramMedicines = paramMedicinesMap[String(p.id)] || [];
+        const paramNote = paramMedNotesMap[String(p.id)] || "";
+        const showParamMedicines = paramMedicines.length > 0 || paramNote;
         return `
       <div class="param-block">
         <div class="param-header">
@@ -769,11 +956,92 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
               </ul>
             `)
             .join("")}
+          ${showParamMedicines
+            ? `
+            <div class="medicines-section param-medicines-section">
+              <div class="medicines-header">
+                <div>
+                  <div class="medicines-title">${escapeHTML(labels.medicinesTitle)}</div>
+                  <div class="medicines-subtitle">${escapeHTML(labels.medicinesSubtitle)}</div>
+                </div>
+                <div class="medicines-count">${paramMedicines.length}</div>
+              </div>
+              ${paramMedicines
+              .map(
+                (m, idx) => `
+                <div class="medicine-card">
+                  <div class="medicine-card-head">
+                    <span class="medicine-index">${idx + 1}</span>
+                    <span class="medicine-name">${escapeHTML(m.name || labels.medicineName)}</span>
+                  </div>
+                  ${m.dosage
+                    ? `<div class="medicine-row"><span class="medicine-label">${escapeHTML(labels.medicineDosage)}:</span> ${escapeHTML(m.dosage)}</div>`
+                    : ""}
+                  ${m.details
+                    ? `<div class="medicine-row"><span class="medicine-label">${escapeHTML(labels.medicineDetails)}:</span> ${escapeHTML(m.details)}</div>`
+                    : ""}
+                </div>
+              `
+              )
+              .join("")}
+              ${paramNote
+              ? `
+                <div class="medicine-note">
+                  <div class="medicine-note-label">${escapeHTML(labels.medicineNoteLabel)}</div>
+                  <div class="medicine-note-text">${escapeHTML(paramNote)}</div>
+                </div>
+              `
+              : ""}
+            </div>
+          `
+            : ""}
         </div>
       </div>
     `;
       })
       .join("")}
+
+  <!-- Recommended Medicines Section (legacy fallback only when no per-parameter medicines exist) -->
+  ${!hasPerParameterMedicines && reportMedicines.length > 0
+      ? `
+    <div class="medicines-section">
+      <div class="medicines-header">
+        <div>
+          <div class="medicines-title">${escapeHTML(labels.medicinesTitle)}</div>
+          <div class="medicines-subtitle">${escapeHTML(labels.medicinesSubtitle)}</div>
+        </div>
+        <div class="medicines-count">${reportMedicines.length}</div>
+      </div>
+      ${reportMedicines
+        .map(
+          (m, idx) => `
+        <div class="medicine-card">
+          <div class="medicine-card-head">
+            <span class="medicine-index">${idx + 1}</span>
+            <span class="medicine-name">${escapeHTML(m.name || labels.medicineName)}</span>
+          </div>
+          ${m.dosage
+              ? `<div class="medicine-row"><span class="medicine-label">${escapeHTML(labels.medicineDosage)}:</span> ${escapeHTML(m.dosage)}</div>`
+              : ""}
+          ${m.details
+              ? `<div class="medicine-row"><span class="medicine-label">${escapeHTML(labels.medicineDetails)}:</span> ${escapeHTML(m.details)}</div>`
+              : ""}
+        </div>
+      `
+        )
+        .join("")}
+      ${medicineNote
+        ? `
+        <div class="medicine-note">
+          <div class="medicine-note-label">${escapeHTML(labels.medicineNoteLabel)}</div>
+          <div class="medicine-note-text">${escapeHTML(medicineNote)}</div>
+        </div>
+      `
+        : ""}
+    </div>
+  `
+      : ""
+    }
 
   <!-- Suggested Wellness Reassessment Date Section (Only if date is provided) -->
   ${formattedNextVisitDate
@@ -869,6 +1137,9 @@ exports.generateReportHTML = async (visitId, lang = "en", options = {}) => {
       language: lang,
       parameters: filteredParameters,
       next_visit_date: visit.next_visit_date,
+      medicines: reportMedicines,
+      medicine_note: medicineNote,
+      parameter_medicines: visit.parameter_medicines || [],
       disclaimer: {
         title: disclaimer.title,
         content: disclaimer.content,

@@ -26,6 +26,7 @@ const parameterCategoryRoutes = require("./routes/parameterCategoryRoutes");
 const patientRoutes = require("./routes/patientRoutes");
 const visitRoutes = require("./routes/visitRoutes");
 const disclaimerRoutes = require("./routes/disclaimerRoutes");
+const medicineRoutes = require("./routes/medicineRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 
 const app = express();
@@ -53,6 +54,7 @@ app.use("/api/member/profile", memberProfileRoutes);
 // Quantum Machine Health Analysis Module Routes
 app.use("/api/v1/admin/parameters", masterDataRoutes);
 app.use("/api/v1/admin/parameter-categories", parameterCategoryRoutes);
+app.use("/api/v1/admin/medicines", medicineRoutes);
 app.use("/api/v1/patients", patientRoutes);
 app.use("/api/v1/visits", visitRoutes);
 app.use("/api/v1/disclaimers", disclaimerRoutes);
