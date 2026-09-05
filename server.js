@@ -28,6 +28,8 @@ const visitRoutes = require("./routes/visitRoutes");
 const disclaimerRoutes = require("./routes/disclaimerRoutes");
 const medicineRoutes = require("./routes/medicineRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const healthCampRoutes = require("./routes/healthCampRoutes");
+const scanPricingRoutes = require("./routes/scanPricingRoutes");
 
 const app = express();
 
@@ -58,6 +60,8 @@ app.use("/api/v1/admin/medicines", medicineRoutes);
 app.use("/api/v1/patients", patientRoutes);
 app.use("/api/v1/visits", visitRoutes);
 app.use("/api/v1/disclaimers", disclaimerRoutes);
+app.use("/api/v1/scan-pricing", scanPricingRoutes);
+app.use("/api/health-camps", healthCampRoutes);
 
 // Dashboard Routes
 app.use("/api/dashboard", dashboardRoutes);

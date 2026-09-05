@@ -30,6 +30,23 @@ const visitSchema = new mongoose.Schema(
       ref: "Disclaimer",
       default: null,
     },
+    // Scan pricing applied when this scan (visit) was created. The name/amount
+    // are snapshotted at creation time so previously completed scans keep their
+    // original charged amount even if the pricing config is later edited,
+    // deactivated or deleted. Optional payment fields keep the schema ready for
+    // a future payment gateway without changing existing flows.
+    scan_pricing: {
+      pricing_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ScanPricing",
+        default: null,
+      },
+      name: { type: String, default: "" },
+      amount: { type: Number, default: 0 },
+      payment_status: { type: String, default: "" },
+      payment_method: { type: String, default: "" },
+      transaction_id: { type: String, default: "" },
+    },
     // Medicine selection (point-wise medicine selection). Each entry stores a
     // snapshot of the master medicine so previously generated reports remain
     // intact even if the master medicine is later edited or deactivated.

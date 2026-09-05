@@ -139,6 +139,11 @@ exports.getPatientById = async (req, res) => {
           reports: reports,
           latest_report_id: reports.length > 0 ? reports[0]._id : null,
           disclaimer: v.report_snapshot?.disclaimer || null,
+          // Scan pricing snapshot (name/amount) captured at scan creation time
+          scan_pricing: v.scan_pricing || null,
+          scan_pricing_id: v.scan_pricing?.pricing_id || null,
+          scan_pricing_name: v.scan_pricing?.name || "",
+          scan_amount: v.scan_pricing?.amount ?? null,
         };
       })
     );

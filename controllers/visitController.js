@@ -5,6 +5,7 @@ const VisitParameterResult = require("../models/VisitParameterResult");
 const VisitSelectedContent = require("../models/VisitSelectedContent");
 const Report = require("../models/Report");
 const Medicine = require("../models/Medicine");
+const ScanPricing = require("../models/ScanPricing");
 const { generateAutoAnalysis } = require("../services/analysisEngine");
 const { generateReportHTML } = require("../services/pdfReportService");
 const { isAdminUser } = require("../middleware/authMiddleware");
@@ -48,7 +49,7 @@ const loadOwnedVisit = async (req, res) => {
 // @route POST /api/v1/visits
 exports.createVisit = async (req, res) => {
   try {
-    const { patient_id, consultant_id } = req.body;
+    const { patient_id, consultant_id, scan_pricing_id } = req.body;
     const patient = await Patient.findById(patient_id);
     if (!patient) return res.status(404).json({ success: false, message: "Patient not found" });
 
@@ -65,11 +66,49 @@ exports.createVisit = async (req, res) => {
       }
     }
 
+    // Resolve the scan pricing for this scan. When the client explicitly picks a
+    // pricing it must exist and be active; otherwise (no pricing supplied) the
+    // default active pricing is used, falling back to the most recently created
+    // active pricing. The selected pricing name/amount are snapshotted onto the
+    // visit so history keeps the amount actually charged.
+    let scanPricing = null;
+    if (scan_pricing_id) {
+      scanPricing = await ScanPricing.findOne({
+        _id: scan_pricing_id,
+        is_active: true,
+      });
+      if (!scanPricing) {
+        return res.status(400).json({
+          success: false,
+          message: "The selected scan pricing is not active or does not exist",
+        });
+      }
+    } else {
+      scanPricing = await ScanPricing.findOne({ is_active: true, is_default: true }).sort({
+        createdAt: -1,
+      });
+      if (!scanPricing) {
+        scanPricing = await ScanPricing.findOne({ is_active: true }).sort({
+          createdAt: -1,
+        });
+      }
+    }
+
     const visit = await Visit.create({
       patient_id,
       franchise_id: patient.franchise_id || req.user.franchise_id || null,
       consultant_id: consultant_id || req.user._id,
       status: "DATA_ENTRY",
+      scan_pricing: scanPricing
+        ? {
+          pricing_id: scanPricing._id,
+          name: scanPricing.name,
+          amount: scanPricing.amount,
+          payment_status: "",
+          payment_method: "",
+          transaction_id: "",
+        }
+        : undefined,
     });
 
     return res.status(201).json({ success: true, data: visit });
@@ -203,7 +242,14 @@ exports.updateSelectedContent = async (req, res) => {
     const ownedVisit = await loadOwnedVisit(req, res);
     if (!ownedVisit) return;
 
-    const { selections, next_visit_date, medicines, note, parameter_medicines } = req.body;
+    const {
+      selections,
+      next_visit_date,
+      medicines,
+      note,
+      parameter_medicines,
+      report_price,
+    } = req.body;
 
     if (next_visit_date !== undefined) {
       await Visit.findByIdAndUpdate(req.params.id, {
@@ -289,6 +335,35 @@ exports.updateSelectedContent = async (req, res) => {
       });
     }
 
+    // Report price confirmation entered at the "Generate Final Report" step
+    // (amount + payment status). Persisted onto the visit's scan_pricing
+    // snapshot so PDF generation and patient history reflect the exact amount
+    // charged for this final report.
+    if (report_price !== undefined) {
+      const pricingUpdate = {};
+
+      if (report_price.amount !== undefined) {
+        const amt = Number(report_price.amount);
+        pricingUpdate["scan_pricing.amount"] = Number.isFinite(amt) && amt >= 0 ? amt : 0;
+      }
+      if (report_price.payment_status !== undefined) {
+        pricingUpdate["scan_pricing.payment_status"] =
+          typeof report_price.payment_status === "string" ? report_price.payment_status.trim() : "";
+      }
+      if (report_price.payment_method !== undefined) {
+        pricingUpdate["scan_pricing.payment_method"] =
+          typeof report_price.payment_method === "string" ? report_price.payment_method.trim() : "";
+      }
+      if (report_price.transaction_id !== undefined) {
+        pricingUpdate["scan_pricing.transaction_id"] =
+          typeof report_price.transaction_id === "string" ? report_price.transaction_id.trim() : "";
+      }
+
+      if (Object.keys(pricingUpdate).length > 0) {
+        await Visit.findByIdAndUpdate(req.params.id, { $set: pricingUpdate });
+      }
+    }
+
     if (Array.isArray(selections)) {
       const bulkOps = selections.map((s) => {
         const isSelected = Boolean(s.is_selected);
@@ -368,10 +443,19 @@ exports.generatePDF = async (req, res) => {
       next_visit_date,
     });
 
+    // Snapshot the report price (amount + payment status) confirmed at the
+    // "Generate Final Report" step onto this Report document so each generated
+    // report keeps the exact amount it was charged for.
+    const pricingSnapshot = ownedVisit.scan_pricing || {};
+    const rawAmount = Number(pricingSnapshot.amount);
     const report = await Report.create({
       visit_id: req.params.id,
       language: selectedLang,
       generated_by: req.user._id,
+      amount: Number.isFinite(rawAmount) && rawAmount >= 0 ? rawAmount : 0,
+      payment_status: pricingSnapshot.payment_status || "",
+      payment_method: pricingSnapshot.payment_method || "",
+      transaction_id: pricingSnapshot.transaction_id || "",
     });
 
     await Visit.findByIdAndUpdate(req.params.id, { status: "SHARED" });
