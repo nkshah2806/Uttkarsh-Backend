@@ -26,6 +26,7 @@ const parameterCategoryRoutes = require("./routes/parameterCategoryRoutes");
 const patientRoutes = require("./routes/patientRoutes");
 const visitRoutes = require("./routes/visitRoutes");
 const disclaimerRoutes = require("./routes/disclaimerRoutes");
+const legalContentRoutes = require("./routes/legalContentRoutes");
 const medicineRoutes = require("./routes/medicineRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const healthCampRoutes = require("./routes/healthCampRoutes");
@@ -60,6 +61,7 @@ app.use("/api/v1/admin/medicines", medicineRoutes);
 app.use("/api/v1/patients", patientRoutes);
 app.use("/api/v1/visits", visitRoutes);
 app.use("/api/v1/disclaimers", disclaimerRoutes);
+app.use("/api/v1/legal-content", legalContentRoutes);
 app.use("/api/v1/scan-pricing", scanPricingRoutes);
 app.use("/api/health-camps", healthCampRoutes);
 
