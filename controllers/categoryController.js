@@ -1,4 +1,11 @@
 const Category = require("../models/Category");
+const { deleteUploadedFile } = require("./uploadController");
+
+// Image must be an uploaded file reference (never an external URL).
+const isFileReference = (value) => {
+  if (!value || typeof value !== "string" || !value.trim()) return true; // optional
+  return /^\/uploads\/[a-z0-9-_]+\/[^/]+$/.test(value.trim());
+};
 
 // GET /api/categories
 const getCategories = async (req, res) => {
@@ -32,6 +39,9 @@ const createCategory = async (req, res) => {
     if (!name || !slug) {
       return res.status(400).json({ message: "Name and Slug are required." });
     }
+    if (image !== undefined && !isFileReference(image)) {
+      return res.status(400).json({ message: "Category image must be an uploaded file reference. External URLs are not allowed." });
+    }
     const existing = await Category.findOne({ slug });
     if (existing) {
       return res.status(400).json({ message: "Category with this slug already exists." });
@@ -47,12 +57,20 @@ const createCategory = async (req, res) => {
 // PUT /api/categories/:id
 const updateCategory = async (req, res) => {
   try {
+    if (req.body.image !== undefined && !isFileReference(req.body.image)) {
+      return res.status(400).json({ message: "Category image must be an uploaded file reference. External URLs are not allowed." });
+    }
+    const existing = await Category.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Category not found" });
+    }
     const updated = await Category.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
     });
-    if (!updated) {
-      return res.status(404).json({ message: "Category not found" });
+    // Remove the replaced image only after the DB write succeeds.
+    if (existing.image && req.body.image !== undefined && req.body.image !== existing.image) {
+      deleteUploadedFile(existing.image);
     }
     return res.json(updated);
   } catch (error) {
@@ -64,10 +82,12 @@ const updateCategory = async (req, res) => {
 // DELETE /api/categories/:id
 const deleteCategory = async (req, res) => {
   try {
-    const deleted = await Category.findByIdAndDelete(req.params.id);
-    if (!deleted) {
+    const existing = await Category.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ message: "Category not found" });
     }
+    await Category.findByIdAndDelete(req.params.id);
+    if (existing.image) deleteUploadedFile(existing.image);
     return res.json({ message: "Category deleted successfully" });
   } catch (error) {
     console.error("Error deleting category:", error);

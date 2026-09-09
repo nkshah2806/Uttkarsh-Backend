@@ -10,8 +10,10 @@ const {
   deleteUser,
   approveUser,
   getMemberPortalPassword,
+  uploadProfileImage,
 } = require("../controllers/userController");
 const { protect, adminOnly } = require("../middleware/authMiddleware");
+const { uploadSingle } = require("../middleware/multer");
 
 const router = express.Router();
 
@@ -19,6 +21,10 @@ const router = express.Router();
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.get("/me", protect, getMe);
+
+// Profile picture upload (member or admin; validates image type/size via the
+// shared multer pipeline and stores under /uploads/users/).
+router.post("/uploadProfileImage", protect, uploadSingle("profileImage", { folder: "users" }), uploadProfileImage);
 
 // User management routes.
 // Listing, creating, approving and deleting users is admin-only.

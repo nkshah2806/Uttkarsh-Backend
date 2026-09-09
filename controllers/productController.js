@@ -1,4 +1,22 @@
 const Product = require("../models/Product");
+const { deleteUploadedFile } = require("./uploadController");
+
+// Product images must be uploaded file references (never external URLs).
+const isFileReference = (value) => {
+  if (!value || typeof value !== "string" || !value.trim()) return true; // optional
+  return /^\/uploads\/[a-z0-9-_]+\/[^/]+$/.test(value.trim());
+};
+
+const validateImages = (images) => {
+  if (images === undefined) return null;
+  const arr = Array.isArray(images) ? images : [images];
+  for (const img of arr) {
+    if (!isFileReference(img)) {
+      return "Product images must be uploaded file references. External URLs are not allowed.";
+    }
+  }
+  return null;
+};
 
 // GET /api/products
 const getProducts = async (req, res) => {
@@ -151,6 +169,10 @@ const createProduct = async (req, res) => {
     if (!name || !slug || !category_slug || price == null || mrp == null) {
       return res.status(400).json({ message: "Name, Slug, Category Slug, Price and MRP are required." });
     }
+    const imagesError = validateImages(req.body.images);
+    if (imagesError) {
+      return res.status(400).json({ message: imagesError });
+    }
     const existing = await Product.findOne({ slug });
     if (existing) {
       return res.status(400).json({ message: "Product with this slug already exists." });
@@ -166,12 +188,24 @@ const createProduct = async (req, res) => {
 // PUT /api/products/:id
 const updateProduct = async (req, res) => {
   try {
+    const imagesError = validateImages(req.body.images);
+    if (imagesError) {
+      return res.status(400).json({ message: imagesError });
+    }
+    const existing = await Product.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Product not found" });
+    }
     const updated = await Product.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
     });
-    if (!updated) {
-      return res.status(404).json({ message: "Product not found" });
+    // Cleanup replaced product images after the DB write succeeds.
+    if (req.body.images !== undefined && Array.isArray(req.body.images)) {
+      const oldImages = Array.isArray(existing.images) ? existing.images : [];
+      oldImages.forEach((oldImg) => {
+        if (oldImg && !req.body.images.includes(oldImg)) deleteUploadedFile(oldImg);
+      });
     }
     return res.json(updated);
   } catch (error) {
@@ -183,10 +217,12 @@ const updateProduct = async (req, res) => {
 // DELETE /api/products/:id
 const deleteProduct = async (req, res) => {
   try {
-    const deleted = await Product.findByIdAndDelete(req.params.id);
-    if (!deleted) {
+    const existing = await Product.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ message: "Product not found" });
     }
+    await Product.findByIdAndDelete(req.params.id);
+    (Array.isArray(existing.images) ? existing.images : []).forEach(deleteUploadedFile);
     return res.json({ message: "Product deleted successfully" });
   } catch (error) {
     console.error("Error deleting product:", error);

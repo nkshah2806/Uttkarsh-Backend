@@ -15,6 +15,8 @@ process.env.ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_S
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
+const path = require("path");
+const fs = require("fs");
 
 const userRoutes = require("./routes/userRoutes");
 const siteSettingsRoutes = require("./routes/siteSettingsRoutes");
@@ -31,6 +33,8 @@ const medicineRoutes = require("./routes/medicineRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const healthCampRoutes = require("./routes/healthCampRoutes");
 const scanPricingRoutes = require("./routes/scanPricingRoutes");
+const galleryRoutes = require("./routes/galleryRoutes");
+const uploadRoutes = require("./routes/uploadRoutes");
 
 const app = express();
 
@@ -38,6 +42,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded media (images/videos) as static files.
+// Files are stored under <project>/uploads and referenced in the database as
+// /uploads/<folder>/<filename>.
+const UPLOADS_DIR = path.join(__dirname, "uploads");
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "7d" }));
 
 // Routes
 app.get("/", (req, res) => {
@@ -64,6 +75,8 @@ app.use("/api/v1/disclaimers", disclaimerRoutes);
 app.use("/api/v1/legal-content", legalContentRoutes);
 app.use("/api/v1/scan-pricing", scanPricingRoutes);
 app.use("/api/health-camps", healthCampRoutes);
+app.use("/api/gallery", galleryRoutes);
+app.use("/api/upload", uploadRoutes);
 
 // Dashboard Routes
 app.use("/api/dashboard", dashboardRoutes);

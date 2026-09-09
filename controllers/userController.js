@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const MemberProfile = require("../models/MemberProfile");
 const passwordCryptoService = require("../services/passwordCryptoService");
+const { deleteUploadedFile } = require("./uploadController");
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -517,6 +518,62 @@ exports.updateUser = async (req, res) => {
       return res.status(409).json({ success: false, message: "Email or phone number already exists" });
     }
     res.status(500).json({ success: false, message: "Failed to update user", error: error.message });
+  }
+};
+
+/**
+ * @desc Upload a profile picture for the logged-in member (or, for admins,
+ *       any user via `userId`). Validates the file, saves it under
+ *       /uploads/users/, updates the user's `image` field and returns the
+ *       server-relative reference.
+ * @route POST /api/user/uploadProfileImage   (protect)
+ * Body: multipart/form-data with field "profileImage"
+ */
+exports.uploadProfileImage = async (req, res) => {
+  try {
+    const file = req.uploadedFile;
+    if (!file) {
+      return res.status(400).json({ success: false, message: "No image was uploaded. Field name must be 'profileImage'." });
+    }
+
+    const targetId = req.body.userId || req.body.id || req.user?._id;
+    if (!targetId) {
+      // Still clean up the orphan file so it never lingers on disk.
+      deleteUploadedFile(file.url);
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    const user = await User.findById(targetId);
+    if (!user) {
+      deleteUploadedFile(file.url);
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // Non-admin members may only change their own profile picture.
+    const isAdminUser = req.user && (req.user.isAdmin || req.user.role === "ADMIN" || req.user.role === "SUPER_ADMIN");
+    if (req.user && !isAdminUser && String(req.user._id) !== String(targetId)) {
+      deleteUploadedFile(file.url);
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const previousImage = user.image;
+    user.image = file.url;
+    await user.save();
+
+    // Safe replacement: remove the old file only after the new one is saved.
+    if (previousImage && previousImage !== file.url && previousImage.startsWith("/uploads/")) {
+      deleteUploadedFile(previousImage);
+    }
+
+    const userResponse = normalizeUserForResponse(user);
+    return res.status(200).json({
+      success: true,
+      message: "Profile picture updated successfully",
+      data: { image: file.url },
+      user: userResponse,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to upload profile picture", error: error.message });
   }
 };
 

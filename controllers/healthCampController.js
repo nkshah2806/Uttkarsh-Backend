@@ -1,4 +1,5 @@
 const HealthCamp = require("../models/HealthCamp");
+const { deleteUploadedFile } = require("./uploadController");
 
 // @desc Get all health camps (admin listing includes inactive camps)
 // @route GET /api/v1/health-camps
@@ -82,9 +83,17 @@ const updateHealthCamp = async (req, res) => {
             return res.status(404).json({ success: false, message: "Health camp not found" });
         }
 
-        const { name } = req.body;
+        const { name, image } = req.body;
         if (name !== undefined && !name.trim()) {
             return res.status(400).json({ success: false, message: "Camp name cannot be empty" });
+        }
+
+        // Image must be an uploaded file reference, never an external URL.
+        if (image !== undefined && image && !/^\/uploads\/[a-z0-9-_]+\/[^/]+$/.test(image)) {
+            return res.status(400).json({
+                success: false,
+                message: "Camp image must be an uploaded file reference. External URLs are not allowed.",
+            });
         }
 
         const allowedFields = [
@@ -113,11 +122,18 @@ const updateHealthCamp = async (req, res) => {
             if (req.body[field] !== undefined) payload[field] = req.body[field];
         });
 
+        const oldImage = camp.image;
         const updated = await HealthCamp.findByIdAndUpdate(
             req.params.id,
             payload,
             { new: true, runValidators: true }
         );
+
+        // Remove the replaced banner file only after the DB write succeeds.
+        if (oldImage && payload.image !== undefined && payload.image !== oldImage) {
+            deleteUploadedFile(oldImage);
+        }
+
         return res.json({ success: true, data: updated });
     } catch (error) {
         return res.status(400).json({ success: false, message: error.message });
@@ -135,6 +151,9 @@ const deleteHealthCamp = async (req, res) => {
         }
 
         await HealthCamp.findByIdAndDelete(req.params.id);
+
+        if (camp.image) deleteUploadedFile(camp.image);
+
         return res.json({ success: true, message: "Health camp deleted successfully" });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
