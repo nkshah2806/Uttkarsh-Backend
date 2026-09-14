@@ -4,6 +4,44 @@ const MemberProfile = require("../models/MemberProfile");
 const passwordCryptoService = require("../services/passwordCryptoService");
 const { deleteUploadedFile } = require("./uploadController");
 
+// ---------------------------------------------------------------------------
+// Phone number helpers
+// ---------------------------------------------------------------------------
+// Duplicate-registration protection must treat the SAME real number as
+// identical even when it is typed with different formatting — e.g.
+// "+91 98765 43210", "098765-43210" and "9876543210" all describe one number.
+// We therefore compare a digits-only "identity" (the trailing 10 digits, which
+// ignores country codes and a leading 0) and match stored phones by suffix.
+const PHONE_MIN_DIGITS = 7;
+
+const normalizePhoneDigits = (value) => String(value || "").replace(/\D/g, "");
+
+const phoneIdentity = (value) => {
+  const digits = normalizePhoneDigits(value);
+  return digits.length > 10 ? digits.slice(-10) : digits;
+};
+
+// Returns Mongo `$or` clauses matching any stored phone whose digits end with
+// the same identity. Returns an empty array when the input is not a real phone.
+const buildPhoneMatchClauses = (value) => {
+  const identity = phoneIdentity(value);
+  if (identity.length < PHONE_MIN_DIGITS) return [];
+  const suffixes = identity.length === 10 ? [identity, `0${identity}`] : [identity];
+  return suffixes.flatMap((suffix) => [
+    { phoneNumber: { $regex: `${suffix}$` } },
+    { mobileNumber: { $regex: `${suffix}$` } },
+  ]);
+};
+
+// True when a stored user's phone fields represent the same real number.
+const samePhoneNumber = (storedUser, value) => {
+  const target = phoneIdentity(value);
+  if (target.length < PHONE_MIN_DIGITS) return false;
+  return [storedUser.phoneNumber, storedUser.mobileNumber].some(
+    (stored) => phoneIdentity(stored) === target
+  );
+};
+
 const generateToken = (user) => {
   return jwt.sign(
     { id: user._id, email: user.email, isAdmin: user.isAdmin, role: user.isAdmin ? "admin" : "member" },
@@ -207,6 +245,7 @@ exports.registerUser = async (req, res) => {
     const resolvedEmail = String(email || "").trim().toLowerCase();
     const resolvedPassword = String(password || "").trim();
     const resolvedPhone = String(mobileNumber || phoneNumber || phone || "").trim();
+    const resolvedPhoneDigits = normalizePhoneDigits(resolvedPhone);
 
     if (!resolvedFullName || !resolvedEmail || !resolvedPassword) {
       return res.status(400).json({
@@ -222,17 +261,26 @@ exports.registerUser = async (req, res) => {
       });
     }
 
+    if (resolvedPhone && resolvedPhoneDigits.length < PHONE_MIN_DIGITS) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid mobile number",
+      });
+    }
+
+    // Reject a number that is already registered, even when it is typed with a
+    // different country code / spacing / separators (see buildPhoneMatchClauses).
     const existingUser = await User.findOne({
-      $or: [
-        { email: resolvedEmail },
-        ...(resolvedPhone ? [{ phoneNumber: resolvedPhone }, { mobileNumber: resolvedPhone }] : []),
-      ],
+      $or: [{ email: resolvedEmail }, ...buildPhoneMatchClauses(resolvedPhone)],
     });
 
     if (existingUser) {
+      const phoneTaken = samePhoneNumber(existingUser, resolvedPhone);
       return res.status(409).json({
         success: false,
-        message: "User with this email or mobile number already exists",
+        message: phoneTaken
+          ? "This mobile number is already registered. Please log in or use a different number."
+          : "User with this email already exists",
       });
     }
 
@@ -313,21 +361,27 @@ exports.createUser = async (req, res) => {
     const resolvedEmail = String(email || "").trim().toLowerCase();
     const resolvedPassword = String(password || "").trim();
     const resolvedPhone = String(mobileNumber || phoneNumber || "").trim();
+    const resolvedPhoneDigits = normalizePhoneDigits(resolvedPhone);
 
     if (!resolvedFullName || !resolvedEmail || !resolvedPassword) {
       return res.status(400).json({ success: false, message: "Name, email and password are required" });
     }
 
+    if (resolvedPhone && resolvedPhoneDigits.length < PHONE_MIN_DIGITS) {
+      return res.status(400).json({ success: false, message: "Please enter a valid mobile number" });
+    }
+
+    // Same format-tolerant duplicate protection as public registration.
     const existingUser = await User.findOne({
-      $or: [
-        { email: resolvedEmail },
-        ...(resolvedPhone ? [{ phoneNumber: resolvedPhone }, { mobileNumber: resolvedPhone }] : []),
-      ],
+      $or: [{ email: resolvedEmail }, ...buildPhoneMatchClauses(resolvedPhone)],
     });
     if (existingUser) {
+      const phoneTaken = samePhoneNumber(existingUser, resolvedPhone);
       return res.status(409).json({
         success: false,
-        message: "User with this email or mobile number already exists",
+        message: phoneTaken
+          ? "This mobile number is already registered. Please use a different number."
+          : "User with this email already exists",
       });
     }
 
@@ -387,6 +441,8 @@ exports.loginUser = async (req, res) => {
         { username: searchStr },
         { phoneNumber: String(loginIdentifier).trim() },
         { mobileNumber: String(loginIdentifier).trim() },
+        // Also match when the same number is stored with different formatting.
+        ...buildPhoneMatchClauses(loginIdentifier),
       ],
     }).select("+password");
 

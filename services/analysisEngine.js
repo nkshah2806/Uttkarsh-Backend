@@ -51,30 +51,54 @@ exports.generateAutoAnalysis = async (visitId) => {
 
     const paramIdStr = param._id.toString();
 
-    // Check if new parsed_nodes exist for this parameter
-    const hasParsedNodesEn = param.parsed_nodes_en && param.parsed_nodes_en.length > 0;
-    const hasParsedNodesHi = param.parsed_nodes_hi && param.parsed_nodes_hi.length > 0;
+    // Use rich hierarchical nodes when the parameter has any authored variant.
+    const enNodes = param.parsed_nodes_en || [];
+    const hiNodes = param.parsed_nodes_hi || [];
+    const guNodes = param.parsed_nodes_gu || [];
 
     let structuredSections = [];
 
-    if (hasParsedNodesEn || hasParsedNodesHi) {
-      // Use rich hierarchical nodes
-      const enNodes = param.parsed_nodes_en || [];
-      const hiNodes = param.parsed_nodes_hi || [];
+    if (enNodes.length > 0 || hiNodes.length > 0 || guNodes.length > 0) {
+      // Map each localized variant by id / orderIndex for node-level lookup.
+      const buildNodeMap = (nodes) => {
+        const map = new Map();
+        nodes.forEach((n) => {
+          map.set(n.id, n);
+          map.set(String(n.orderIndex), n);
+        });
+        return map;
+      };
+      const hiMap = buildNodeMap(hiNodes);
+      const guMap = buildNodeMap(guNodes);
 
-      // Map Hindi nodes by orderIndex or id for dual-language lookup
-      const hiMap = new Map();
-      hiNodes.forEach((hn) => {
-        hiMap.set(hn.id, hn);
-        hiMap.set(String(hn.orderIndex), hn);
-      });
+      // A localized node counts as a real translation only when it exists and
+      // differs from the English source. Falling back to the English string
+      // here would make the PDF report show English for Hindi/Gujarati even
+      // though a machine-translatable source exists.
+      const localizedContent = (source, ...candidates) => {
+        for (const node of candidates) {
+          if (node && typeof node.content === "string") {
+            const value = node.content.trim();
+            if (value && value !== (source || "").trim()) return value;
+          }
+        }
+        return "";
+      };
 
       // Group into sections
       let currentSection = null;
 
       enNodes.forEach((node) => {
-        const hiEquivalent = hiMap.get(node.id) || hiMap.get(String(node.orderIndex));
-        const hiText = hiEquivalent ? hiEquivalent.content : node.content;
+        const hiText = localizedContent(
+          node.content,
+          hiMap.get(node.id),
+          hiMap.get(String(node.orderIndex))
+        );
+        const guText = localizedContent(
+          node.content,
+          guMap.get(node.id),
+          guMap.get(String(node.orderIndex))
+        );
 
         if (node.level === 0 || node.nodeType === "section") {
           currentSection = {
@@ -84,6 +108,7 @@ exports.generateAutoAnalysis = async (visitId) => {
             nodeType: "section",
             title_en: node.content,
             title_hi: hiText,
+            title_gu: guText,
             categoryType: node.categoryType || "REPORT",
             orderIndex: node.orderIndex,
             items: [],
@@ -98,6 +123,7 @@ exports.generateAutoAnalysis = async (visitId) => {
               nodeType: "section",
               title_en: "Overview",
               title_hi: "अवलोकन",
+              title_gu: "ઝલક",
               categoryType: "REPORT",
               orderIndex: 0,
               items: [],
@@ -119,6 +145,7 @@ exports.generateAutoAnalysis = async (visitId) => {
             nodeType: node.nodeType,
             text_en: node.content,
             text_hi: hiText,
+            text_gu: guText,
             level: node.level || 1,
             isSelectable: node.isSelectable !== false,
             categoryType: node.categoryType || currentSection.categoryType,
@@ -168,7 +195,17 @@ exports.generateAutoAnalysis = async (visitId) => {
             parentId: secId,
             nodeType: "bullet",
             text_en: c.text_en,
-            text_hi: c.text_hi,
+            // Only emit a localized variant when it genuinely differs from the
+            // English source; otherwise leave blank so the PDF service can
+            // machine-translate it (legacy rows are often backfilled with English).
+            text_hi:
+              c.text_hi && c.text_hi.trim() && c.text_hi.trim() !== (c.text_en || "").trim()
+                ? c.text_hi
+                : "",
+            text_gu:
+              c.text_gu && c.text_gu.trim() && c.text_gu.trim() !== (c.text_en || "").trim()
+                ? c.text_gu
+                : "",
             priority: c.priority,
             level: 1,
             isSelectable: true,
@@ -184,7 +221,8 @@ exports.generateAutoAnalysis = async (visitId) => {
           parameter_id: paramIdStr,
           nodeType: "section",
           title_en: cType,
-          title_hi: cType,
+          title_hi: "",
+          title_gu: "",
           categoryType: cType,
           orderIndex: secIdx + 1,
           items: secItems,
@@ -198,6 +236,7 @@ exports.generateAutoAnalysis = async (visitId) => {
         code: param.code,
         name_en: param.name_en,
         name_hi: param.name_hi,
+        name_gu: param.name_gu,
         unit: param.unit,
         normal_min: param.normal_min,
         normal_max: param.normal_max,
@@ -241,6 +280,7 @@ function mapSectionsToLegacyContent(sections) {
         id: item.id,
         text_en: item.text_en,
         text_hi: item.text_hi,
+        text_gu: item.text_gu,
         priority: item.priority || 1,
         content_type: cat,
         is_selected: item.is_selected,

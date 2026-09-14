@@ -31,6 +31,11 @@ const parameterMasterContentSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    text_gu: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     text_en: {
       type: String,
       required: true,

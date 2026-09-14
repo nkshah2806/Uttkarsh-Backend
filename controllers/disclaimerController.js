@@ -13,6 +13,7 @@ exports.getDisclaimers = async (req, res) => {
         { title: { $regex: search, $options: "i" } },
         { content: { $regex: search, $options: "i" } },
         { content_hi: { $regex: search, $options: "i" } },
+        { content_gu: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -88,7 +89,7 @@ exports.getDisclaimerById = async (req, res) => {
 // @access Admin
 exports.createDisclaimer = async (req, res) => {
   try {
-    const { title, content, content_hi, is_active } = req.body;
+    const { title, content, content_hi, content_gu, is_active } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({
@@ -108,6 +109,7 @@ exports.createDisclaimer = async (req, res) => {
       title: title.trim(),
       content: content.trim(),
       content_hi: content_hi ? content_hi.trim() : "",
+      content_gu: content_gu ? content_gu.trim() : "",
       is_active: shouldBeActive,
       created_by: req.user?._id || null,
       updated_by: req.user?._id || null,
@@ -128,7 +130,7 @@ exports.createDisclaimer = async (req, res) => {
 // @access Admin
 exports.updateDisclaimer = async (req, res) => {
   try {
-    const { title, content, content_hi, is_active } = req.body;
+    const { title, content, content_hi, content_gu, is_active } = req.body;
     const disclaimer = await Disclaimer.findById(req.params.id);
 
     if (!disclaimer) {
@@ -145,6 +147,7 @@ exports.updateDisclaimer = async (req, res) => {
     if (title) disclaimer.title = title.trim();
     if (content) disclaimer.content = content.trim();
     if (content_hi !== undefined) disclaimer.content_hi = content_hi.trim();
+    if (content_gu !== undefined) disclaimer.content_gu = content_gu.trim();
     disclaimer.is_active = shouldBeActive;
     disclaimer.updated_by = req.user?._id || disclaimer.updated_by;
 

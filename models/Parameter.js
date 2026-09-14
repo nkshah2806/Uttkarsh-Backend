@@ -20,8 +20,10 @@ const versionSnapshotSchema = new mongoose.Schema(
     version: { type: Number, required: true },
     raw_content_en: { type: String, default: "" },
     raw_content_hi: { type: String, default: "" },
+    raw_content_gu: { type: String, default: "" },
     parsed_nodes_en: [contentNodeSchema],
     parsed_nodes_hi: [contentNodeSchema],
+    parsed_nodes_gu: [contentNodeSchema],
     updated_at: { type: Date, default: Date.now },
     updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     change_summary: { type: String, default: "Updated parameter content" },
@@ -39,6 +41,11 @@ const parameterSchema = new mongoose.Schema(
       uppercase: true,
     },
     name_hi: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    name_gu: {
       type: String,
       default: "",
       trim: true,
@@ -72,6 +79,16 @@ const parameterSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    description_hi: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    description_gu: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     raw_content_en: {
       type: String,
       default: "",
@@ -80,8 +97,13 @@ const parameterSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    raw_content_gu: {
+      type: String,
+      default: "",
+    },
     parsed_nodes_en: [contentNodeSchema],
     parsed_nodes_hi: [contentNodeSchema],
+    parsed_nodes_gu: [contentNodeSchema],
     version: {
       type: Number,
       default: 1,

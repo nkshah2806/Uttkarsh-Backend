@@ -232,6 +232,7 @@ async function runTests() {
 
     // Select Item 1, Deselect Item 2
     const reqSelection = {
+      user: testAdmin,
       params: { id: String(testVisit._id) },
       body: {
         selections: [

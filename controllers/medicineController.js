@@ -48,8 +48,14 @@ const createMedicine = async (req, res) => {
 
         const medicine = await Medicine.create({
             name: normalizedName,
+            name_hi: req.body.name_hi || "",
+            name_gu: req.body.name_gu || "",
             details: details || "",
+            details_hi: req.body.details_hi || "",
+            details_gu: req.body.details_gu || "",
             dosage: dosage || "",
+            dosage_hi: req.body.dosage_hi || "",
+            dosage_gu: req.body.dosage_gu || "",
             is_active: true,
         });
 
@@ -81,8 +87,14 @@ const updateMedicine = async (req, res) => {
             req.params.id,
             {
                 ...(name && { name: name.trim() }),
+                ...(req.body.name_hi !== undefined && { name_hi: req.body.name_hi || "" }),
+                ...(req.body.name_gu !== undefined && { name_gu: req.body.name_gu || "" }),
                 ...(details !== undefined && { details: details || "" }),
+                ...(req.body.details_hi !== undefined && { details_hi: req.body.details_hi || "" }),
+                ...(req.body.details_gu !== undefined && { details_gu: req.body.details_gu || "" }),
                 ...(dosage !== undefined && { dosage: dosage || "" }),
+                ...(req.body.dosage_hi !== undefined && { dosage_hi: req.body.dosage_hi || "" }),
+                ...(req.body.dosage_gu !== undefined && { dosage_gu: req.body.dosage_gu || "" }),
                 ...(typeof is_active === "boolean" && { is_active }),
             },
             { new: true, runValidators: true }

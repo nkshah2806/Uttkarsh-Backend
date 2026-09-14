@@ -15,6 +15,7 @@ exports.getParameters = async (req, res) => {
         { code: { $regex: search, $options: "i" } },
         { name_en: { $regex: search, $options: "i" } },
         { name_hi: { $regex: search, $options: "i" } },
+        { name_gu: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -77,14 +78,18 @@ exports.createParameter = async (req, res) => {
     const {
       code,
       name_hi,
+      name_gu,
       name_en,
       unit,
       normal_min,
       normal_max,
       category,
       description,
+      description_hi,
+      description_gu,
       raw_content_en,
       raw_content_hi,
+      raw_content_gu,
       status = "PUBLISHED",
     } = req.body;
 
@@ -102,28 +107,36 @@ exports.createParameter = async (req, res) => {
     // Auto-parse raw multi-line content into AST nodes
     const parsed_nodes_en = raw_content_en ? parseContent(raw_content_en, "en") : [];
     const parsed_nodes_hi = raw_content_hi ? parseContent(raw_content_hi, "hi") : [];
+    const parsed_nodes_gu = raw_content_gu ? parseContent(raw_content_gu, "gu") : [];
 
     const parameter = await Parameter.create({
       code: finalCode,
       name_hi,
+      name_gu: name_gu || "",
       name_en,
       unit: unit || "",
       normal_min: Number(normal_min),
       normal_max: Number(normal_max),
       category: category || "General",
       description: description || "",
+      description_hi: description_hi || "",
+      description_gu: description_gu || "",
       raw_content_en: raw_content_en || "",
       raw_content_hi: raw_content_hi || "",
+      raw_content_gu: raw_content_gu || "",
       parsed_nodes_en,
       parsed_nodes_hi,
+      parsed_nodes_gu,
       version: 1,
       version_history: [
         {
           version: 1,
           raw_content_en: raw_content_en || "",
           raw_content_hi: raw_content_hi || "",
+          raw_content_gu: raw_content_gu || "",
           parsed_nodes_en,
           parsed_nodes_hi,
+          parsed_nodes_gu,
           updated_at: new Date(),
           updated_by: req.user?._id,
           change_summary: "Initial version created",
@@ -151,14 +164,18 @@ exports.updateParameter = async (req, res) => {
     const {
       code,
       name_hi,
+      name_gu,
       name_en,
       unit,
       normal_min,
       normal_max,
       category,
       description,
+      description_hi,
+      description_gu,
       raw_content_en,
       raw_content_hi,
+      raw_content_gu,
       status,
       is_active,
     } = req.body;
@@ -173,19 +190,23 @@ exports.updateParameter = async (req, res) => {
     }
 
     if (name_hi !== undefined) existing.name_hi = name_hi;
+    if (name_gu !== undefined) existing.name_gu = name_gu;
     if (name_en !== undefined) existing.name_en = name_en;
     if (unit !== undefined) existing.unit = unit;
     if (normal_min !== undefined) existing.normal_min = Number(normal_min);
     if (normal_max !== undefined) existing.normal_max = Number(normal_max);
     if (category !== undefined) existing.category = category;
     if (description !== undefined) existing.description = description;
+    if (description_hi !== undefined) existing.description_hi = description_hi;
+    if (description_gu !== undefined) existing.description_gu = description_gu;
     if (status !== undefined) existing.status = status;
     if (is_active !== undefined) existing.is_active = is_active;
 
     // Check if content has changed
     const contentChanged =
       (raw_content_en !== undefined && raw_content_en !== existing.raw_content_en) ||
-      (raw_content_hi !== undefined && raw_content_hi !== existing.raw_content_hi);
+      (raw_content_hi !== undefined && raw_content_hi !== existing.raw_content_hi) ||
+      (raw_content_gu !== undefined && raw_content_gu !== existing.raw_content_gu);
 
     if (contentChanged) {
       if (raw_content_en !== undefined) {
@@ -196,6 +217,10 @@ exports.updateParameter = async (req, res) => {
         existing.raw_content_hi = raw_content_hi;
         existing.parsed_nodes_hi = parseContent(raw_content_hi, "hi");
       }
+      if (raw_content_gu !== undefined) {
+        existing.raw_content_gu = raw_content_gu;
+        existing.parsed_nodes_gu = parseContent(raw_content_gu, "gu");
+      }
 
       // If published, increment version and record in version history
       if (existing.status === "PUBLISHED") {
@@ -204,8 +229,10 @@ exports.updateParameter = async (req, res) => {
           version: existing.version,
           raw_content_en: existing.raw_content_en,
           raw_content_hi: existing.raw_content_hi,
+          raw_content_gu: existing.raw_content_gu,
           parsed_nodes_en: existing.parsed_nodes_en,
           parsed_nodes_hi: existing.parsed_nodes_hi,
+          parsed_nodes_gu: existing.parsed_nodes_gu,
           updated_at: new Date(),
           updated_by: req.user?._id,
           change_summary: `Content updated to v${existing.version}`,
@@ -241,23 +268,30 @@ exports.duplicateParameter = async (req, res) => {
       code: newCode,
       name_en: `${source.name_en} (Copy)`,
       name_hi: source.name_hi ? `${source.name_hi} (प्रति)` : "",
+      name_gu: source.name_gu ? `${source.name_gu} (નકલ)` : "",
       unit: source.unit,
       normal_min: source.normal_min,
       normal_max: source.normal_max,
       category: source.category,
       description: source.description,
+      description_hi: source.description_hi,
+      description_gu: source.description_gu,
       raw_content_en: source.raw_content_en,
       raw_content_hi: source.raw_content_hi,
+      raw_content_gu: source.raw_content_gu,
       parsed_nodes_en: source.parsed_nodes_en,
       parsed_nodes_hi: source.parsed_nodes_hi,
+      parsed_nodes_gu: source.parsed_nodes_gu,
       version: 1,
       version_history: [
         {
           version: 1,
           raw_content_en: source.raw_content_en,
           raw_content_hi: source.raw_content_hi,
+          raw_content_gu: source.raw_content_gu,
           parsed_nodes_en: source.parsed_nodes_en,
           parsed_nodes_hi: source.parsed_nodes_hi,
+          parsed_nodes_gu: source.parsed_nodes_gu,
           updated_at: new Date(),
           updated_by: req.user?._id,
           change_summary: `Duplicated from ${source.code}`,
@@ -322,12 +356,13 @@ exports.getParameterContent = async (req, res) => {
 
 exports.createParameterContent = async (req, res) => {
   try {
-    const { result_type, content_type, text_hi, text_en, priority } = req.body;
+    const { result_type, content_type, text_hi, text_gu, text_en, priority } = req.body;
     const content = await ParameterMasterContent.create({
       parameter_id: req.params.id,
       result_type,
       content_type,
       text_hi,
+      text_gu,
       text_en,
       priority: priority || 1,
     });

@@ -56,10 +56,16 @@ const getGalleryItemById = async (req, res) => {
 const ALLOWED_FIELDS = [
     "type",
     "title",
+    "title_hi",
+    "title_gu",
     "description",
+    "description_hi",
+    "description_gu",
     "media_url",
     "thumbnail_url",
     "category",
+    "category_hi",
+    "category_gu",
     "display_order",
     "is_active",
 ];

@@ -35,6 +35,7 @@ const healthCampRoutes = require("./routes/healthCampRoutes");
 const scanPricingRoutes = require("./routes/scanPricingRoutes");
 const galleryRoutes = require("./routes/galleryRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
+const translationRoutes = require("./routes/translationRoutes");
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use("/api/v1/scan-pricing", scanPricingRoutes);
 app.use("/api/health-camps", healthCampRoutes);
 app.use("/api/gallery", galleryRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/translate", translationRoutes);
 
 // Dashboard Routes
 app.use("/api/dashboard", dashboardRoutes);

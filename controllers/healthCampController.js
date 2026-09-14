@@ -40,14 +40,26 @@ const createHealthCamp = async (req, res) => {
 
         const allowedFields = [
             "name",
+            "name_hi",
+            "name_gu",
             "description",
+            "description_hi",
+            "description_gu",
             "date",
             "start_time",
             "end_time",
             "venue",
+            "venue_hi",
+            "venue_gu",
             "address",
+            "address_hi",
+            "address_gu",
             "city",
+            "city_hi",
+            "city_gu",
             "state",
+            "state_hi",
+            "state_gu",
             "pincode",
             "contact_person",
             "contact_number",
@@ -57,6 +69,8 @@ const createHealthCamp = async (req, res) => {
             "registration_required",
             "registration_limit",
             "additional_notes",
+            "additional_notes_hi",
+            "additional_notes_gu",
         ];
 
         const payload = {};
@@ -98,14 +112,26 @@ const updateHealthCamp = async (req, res) => {
 
         const allowedFields = [
             "name",
+            "name_hi",
+            "name_gu",
             "description",
+            "description_hi",
+            "description_gu",
             "date",
             "start_time",
             "end_time",
             "venue",
+            "venue_hi",
+            "venue_gu",
             "address",
+            "address_hi",
+            "address_gu",
             "city",
+            "city_hi",
+            "city_gu",
             "state",
+            "state_hi",
+            "state_gu",
             "pincode",
             "contact_person",
             "contact_number",
@@ -115,6 +141,8 @@ const updateHealthCamp = async (req, res) => {
             "registration_required",
             "registration_limit",
             "additional_notes",
+            "additional_notes_hi",
+            "additional_notes_gu",
         ];
 
         const payload = {};

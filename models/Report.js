@@ -13,7 +13,7 @@ const reportSchema = new mongoose.Schema(
     },
     language: {
       type: String,
-      enum: ["hi", "en"],
+      enum: ["hi", "gu", "en"],
       default: "en",
     },
     // Report price snapshotted at generation time (amount + payment status).

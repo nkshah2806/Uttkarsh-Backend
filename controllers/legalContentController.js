@@ -18,7 +18,11 @@ exports.getLegalContentList = async (req, res) => {
         if (search) {
             filter.$or = [
                 { title: { $regex: search, $options: "i" } },
+                { title_hi: { $regex: search, $options: "i" } },
+                { title_gu: { $regex: search, $options: "i" } },
                 { content: { $regex: search, $options: "i" } },
+                { content_hi: { $regex: search, $options: "i" } },
+                { content_gu: { $regex: search, $options: "i" } },
             ];
         }
 
@@ -103,7 +107,7 @@ exports.getLegalContentById = async (req, res) => {
 // @access Admin
 exports.createLegalContent = async (req, res) => {
     try {
-        const { type, title, content, is_active } = req.body;
+        const { type, title, content, title_hi, title_gu, content_hi, content_gu, is_active } = req.body;
 
         if (!type || !VALID_TYPES.includes(type)) {
             return res.status(400).json({
@@ -129,7 +133,11 @@ exports.createLegalContent = async (req, res) => {
         const legalContent = await LegalContent.create({
             type,
             title: title.trim(),
+            title_hi: title_hi ? title_hi.trim() : "",
+            title_gu: title_gu ? title_gu.trim() : "",
             content: content.trim(),
+            content_hi: content_hi ? content_hi.trim() : "",
+            content_gu: content_gu ? content_gu.trim() : "",
             is_active: shouldBeActive,
             created_by: req.user?._id || null,
             updated_by: req.user?._id || null,
@@ -150,7 +158,7 @@ exports.createLegalContent = async (req, res) => {
 // @access Admin
 exports.updateLegalContent = async (req, res) => {
     try {
-        const { type, title, content, is_active } = req.body;
+        const { type, title, content, title_hi, title_gu, content_hi, content_gu, is_active } = req.body;
         const legalContent = await LegalContent.findById(req.params.id);
 
         if (!legalContent) {
@@ -178,7 +186,11 @@ exports.updateLegalContent = async (req, res) => {
         }
 
         if (title) legalContent.title = title.trim();
+        if (title_hi !== undefined) legalContent.title_hi = title_hi ? title_hi.trim() : "";
+        if (title_gu !== undefined) legalContent.title_gu = title_gu ? title_gu.trim() : "";
         if (content) legalContent.content = content.trim();
+        if (content_hi !== undefined) legalContent.content_hi = content_hi ? content_hi.trim() : "";
+        if (content_gu !== undefined) legalContent.content_gu = content_gu ? content_gu.trim() : "";
         if (type && VALID_TYPES.includes(type)) legalContent.type = finalType;
         legalContent.is_active = shouldBeActive;
         legalContent.updated_by = req.user?._id || legalContent.updated_by;

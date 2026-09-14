@@ -16,7 +16,12 @@ const galleryItemSchema = new mongoose.Schema(
             enum: ["photo", "video"],
         },
         title: { type: String, required: true, trim: true },
+        // Optional localized overlays. English stays the source of truth.
+        title_hi: { type: String, default: "", trim: true },
+        title_gu: { type: String, default: "", trim: true },
         description: { type: String, default: "" },
+        description_hi: { type: String, default: "" },
+        description_gu: { type: String, default: "" },
         // Photo: uploaded image file reference (/uploads/gallery/...).
         // Video: uploaded video file reference (/uploads/gallery-video/...).
         media_url: { type: String, default: "" },
@@ -24,6 +29,8 @@ const galleryItemSchema = new mongoose.Schema(
         thumbnail_url: { type: String, default: "" },
         // Optional free-text category (Camps, Events, Activities, ...).
         category: { type: String, default: "", trim: true },
+        category_hi: { type: String, default: "", trim: true },
+        category_gu: { type: String, default: "", trim: true },
         // Ascending sort order on the public page (lower = first).
         display_order: { type: Number, default: 0 },
         is_active: { type: Boolean, default: true },

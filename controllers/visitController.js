@@ -436,8 +436,11 @@ exports.generatePDF = async (req, res) => {
     const ownedVisit = await loadOwnedVisit(req, res);
     if (!ownedVisit) return;
 
-    const { lang, next_visit_date } = req.body; // 'hi' or 'en'
-    const selectedLang = lang === "hi" ? "hi" : "en";
+    const { lang, next_visit_date } = req.body; // 'hi', 'gu' or 'en'
+    const requestedLang = String(lang || "").split("-")[0].toLowerCase();
+    const selectedLang = ["hi", "gu"].includes(requestedLang)
+      ? requestedLang
+      : "en";
 
     const html = await generateReportHTML(req.params.id, selectedLang, {
       next_visit_date,

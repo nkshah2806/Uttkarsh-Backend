@@ -17,6 +17,11 @@ const disclaimerSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    content_gu: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     is_active: {
       type: Boolean,
       default: false,

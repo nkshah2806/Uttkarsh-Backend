@@ -21,9 +21,31 @@ const legalContentSchema = new mongoose.Schema(
             required: [true, "Legal content title is required"],
             trim: true,
         },
+        // Optional localized overlays. English (`title`/`content`) stays the
+        // required source of truth and is used as the fallback.
+        title_hi: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+        title_gu: {
+            type: String,
+            default: "",
+            trim: true,
+        },
         content: {
             type: String,
             required: [true, "Legal content is required"],
+            trim: true,
+        },
+        content_hi: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+        content_gu: {
+            type: String,
+            default: "",
             trim: true,
         },
         is_active: {
