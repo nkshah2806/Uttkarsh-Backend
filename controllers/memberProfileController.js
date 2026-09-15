@@ -2,6 +2,7 @@ const MemberProfile = require("../models/MemberProfile");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const passwordCryptoService = require("../services/passwordCryptoService");
+const { deleteUploadedFile } = require("./uploadController");
 
 // Generate helper codes
 const generateDistributorId = (userId) => {
@@ -383,6 +384,9 @@ exports.updateProfilePicture = async (req, res) => {
     // profile behind. If the member has not created a profile yet, the picture
     // is still stored on the User record and `createOrUpdateProfile` will pick
     // up the same reference (which is read from the request) on first save.
+    const previousProfile = await MemberProfile.findOne({ user: userId }).select("profile_picture").lean();
+    const previousReference = previousProfile ? previousProfile.profile_picture || "" : "";
+
     const savedProfile = await MemberProfile.findOneAndUpdate(
       { user: userId },
       { $set: { profile_picture: reference } },
@@ -392,6 +396,12 @@ exports.updateProfilePicture = async (req, res) => {
     // Mirror onto the User record so every existing avatar resolver stays
     // consistent with the member profile document.
     await User.findByIdAndUpdate(userId, { $set: { image: reference } });
+
+    // If the picture was replaced or cleared, drop the replaced file and its
+    // MongoDB durability mirror so orphaned images do not accumulate.
+    if (previousReference && previousReference !== reference && previousReference.startsWith("/uploads/")) {
+      deleteUploadedFile(previousReference);
+    }
 
     return res.status(200).json({
       success: true,

@@ -587,33 +587,51 @@ exports.updateUser = async (req, res) => {
  */
 exports.uploadProfileImage = async (req, res) => {
   try {
-    const file = req.uploadedFile;
-    if (!file) {
-      return res.status(400).json({ success: false, message: "No image was uploaded. Field name must be 'profileImage'." });
-    }
-
     // `req.body` is populated by the multer middleware that runs before this
-    // handler; the fallbacks keep the handler safe (no TypeError -> 500) if a
+    // handler; `|| {}` keeps the handler safe (no TypeError -> 500) if a
     // request ever reaches it with an empty/undefined body.
     const body = req.body || {};
+    const file = req.uploadedFile;
+
+    console.log(
+      `[Profile Upload] request received: ${req.method} ${req.originalUrl} | authUserId=${req.user?._id || "none"
+      } | file=${file ? `${file.mimetype} ${file.size}B -> ${file.url}` : "NONE"} | bodyUserId=${body.userId || body.id || "none"
+      }`
+    );
+
+    if (!file) {
+      console.error("[Profile Upload] rejected: no file on the request (field name must be 'profileImage')");
+      return res.status(400).json({
+        success: false,
+        message: "No image was uploaded. Field name must be 'profileImage'.",
+        error: "NO_FILE",
+      });
+    }
+
     const targetId = body.userId || body.id || req.user?._id;
     if (!targetId) {
       // Still clean up the orphan file so it never lingers on disk.
       deleteUploadedFile(file.url);
-      return res.status(400).json({ success: false, message: "User ID is required" });
+      return res.status(400).json({ success: false, message: "User ID is required", error: "USER_ID_REQUIRED" });
+    }
+
+    if (!req.user) {
+      deleteUploadedFile(file.url);
+      return res.status(401).json({ success: false, message: "Authentication required", error: "UNAUTHENTICATED" });
+    }
+
+    // SECURITY: non-admin members may only change their OWN profile picture.
+    // An admin may target any user via `userId` in the form body.
+    const isAdminUser = req.user.isAdmin || req.user.role === "ADMIN" || req.user.role === "SUPER_ADMIN";
+    if (!isAdminUser && String(req.user._id) !== String(targetId)) {
+      deleteUploadedFile(file.url);
+      return res.status(403).json({ success: false, message: "Access denied", error: "FORBIDDEN" });
     }
 
     const user = await User.findById(targetId);
     if (!user) {
       deleteUploadedFile(file.url);
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    // Non-admin members may only change their own profile picture.
-    const isAdminUser = req.user && (req.user.isAdmin || req.user.role === "ADMIN" || req.user.role === "SUPER_ADMIN");
-    if (req.user && !isAdminUser && String(req.user._id) !== String(targetId)) {
-      deleteUploadedFile(file.url);
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(404).json({ success: false, message: "User not found", error: "USER_NOT_FOUND" });
     }
 
     const previousImage = user.image;
@@ -634,13 +652,16 @@ exports.uploadProfileImage = async (req, res) => {
 
     if (!updatedUser) {
       deleteUploadedFile(file.url);
-      return res.status(404).json({ success: false, message: "User not found" });
+      console.error(`[Profile Upload] FAILED db update for user ${targetId}`);
+      return res.status(404).json({ success: false, message: "User not found", error: "USER_NOT_FOUND" });
     }
 
     // Safe replacement: remove the old file only after the new one is saved.
     if (previousImage && previousImage !== file.url && previousImage.startsWith("/uploads/")) {
       deleteUploadedFile(previousImage);
     }
+
+    console.log(`[Profile Upload] DB update successful: user ${updatedUser._id} -> ${file.url}`);
 
     const userResponse = normalizeUserForResponse(updatedUser);
     return res.status(200).json({
@@ -650,10 +671,16 @@ exports.uploadProfileImage = async (req, res) => {
       user: userResponse,
     });
   } catch (error) {
-    // Log the real (server-side) cause so a failure here is diagnosable, while
-    // still returning a clean client-facing message.
-    console.error("[uploadProfileImage] failed:", error.message);
-    return res.status(500).json({ success: false, message: "Failed to upload profile picture", error: error.message });
+    // Log the real (server-side) cause — including the stack — so a failure
+    // here is always diagnosable from the backend/Render logs. The stack is
+    // NEVER sent to the client; the response carries only a generic message.
+    console.error("[Profile Upload] ERROR:", error.message);
+    console.error(error.stack);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to upload profile picture. Please try again.",
+      error: "UPLOAD_FAILED",
+    });
   }
 };
 

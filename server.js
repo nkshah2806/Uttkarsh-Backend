@@ -36,6 +36,7 @@ const scanPricingRoutes = require("./routes/scanPricingRoutes");
 const galleryRoutes = require("./routes/galleryRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const translationRoutes = require("./routes/translationRoutes");
+const { restoreAsset } = require("./services/assetStorageService");
 
 const app = express();
 
@@ -47,9 +48,13 @@ app.use(express.urlencoded({ extended: true }));
 // Serve uploaded media (images/videos) as static files.
 // Files are stored under <project>/uploads and referenced in the database as
 // /uploads/<folder>/<filename>.
+//
+// Production note: Render's filesystem is EPHEMERAL, so the disk copy of an
+// uploaded image can disappear after a deploy/restart. `restoreAsset` runs
+// after express.static and serves the MongoDB-mirrored copy in that case.
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "7d" }));
+app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "7d" }), restoreAsset);
 
 // Routes
 app.get("/", (req, res) => {

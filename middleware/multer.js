@@ -2,6 +2,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const { backupAsset } = require("../services/assetStorageService");
 
 // ---------------------------------------------------------------------------
 // Upload directory structure
@@ -49,16 +50,44 @@ const kindFromFolder = (folder) => {
     return null;
 };
 
+/** Tag an error so the handler can map it to HTTP 415 (Unsupported Media Type). */
+const unsupportedTypeError = (message) => {
+    const err = new Error(message);
+    err.code = "UNSUPPORTED_FILE_TYPE";
+    return err;
+};
+
 /**
- * Express handler that applies multer to a single file field ("file") while
- * validating the file type/size based on the folder the client is targeting.
+ * Express handler that applies multer to a single file field while validating
+ * the file type/size based on the folder the client is targeting.
  *
- * Usage: router.post("/upload/:folder", protect, adminOnly, uploadSingle("file"), controller)
+ * Usage:
+ *   router.post("/upload/:folder", protect, adminOnly, uploadSingle("file"), controller)
+ *   router.post("/uploadProfileImage", protect, uploadSingle("profileImage", { folder: "users" }), controller)
+ *
+ * Status codes returned:
+ *   400 — no file in the request, or an unexpected/invalid field name
+ *   413 — file exceeds the allowed size for the detected media kind
+ *   415 — file mime type / extension is not allowed
  */
 const uploadSingle = (fieldName = "file", options = {}) => {
     return (req, res, next) => {
-        const folderName = safeFolder(options.folder || req.params.folder || req.body.folder || "misc");
-        const kind = kindFromFolder(folderName) || (req.body.kind === "video" ? "video" : "image");
+        // ------------------------------------------------------------------
+        // CRITICAL: this setup code runs BEFORE multer parses the multipart
+        // body, so `req.body` is NOT populated yet. Express 5 / body-parser
+        // sets `req.body = undefined` for multipart/form-data requests, and
+        // multer only assigns `req.body = Object.create(null)` inside its own
+        // request handler (which runs later, from `upload(...)` below).
+        //
+        // Reading `req.body.kind` directly here therefore threw
+        //   TypeError: Cannot read properties of undefined (reading 'kind')
+        // which Express turned into "500 Internal Server Error" for
+        // POST /api/user/uploadProfileImage (and every other upload route).
+        // Always go through a local `body` fallback object.
+        // ------------------------------------------------------------------
+        const body = req.body || {};
+        const folderName = safeFolder(options.folder || req.params.folder || body.folder || "misc");
+        const kind = kindFromFolder(folderName) || (body.kind === "video" ? "video" : "image");
         const rules = MEDIA_TYPES[kind] || MEDIA_TYPES.image;
 
         const targetDir = path.join(UPLOAD_ROOT, folderName);
@@ -78,12 +107,16 @@ const uploadSingle = (fieldName = "file", options = {}) => {
             const ext = path.extname(file.originalname || "").toLowerCase();
             if (!rules.mimeTypes.includes(file.mimetype)) {
                 return cb(
-                    new Error(`Unsupported file type "${file.mimetype}". Allowed: ${rules.mimeTypes.join(", ")}`)
+                    unsupportedTypeError(
+                        `Unsupported file type "${file.mimetype}". Allowed: ${rules.mimeTypes.join(", ")}`
+                    )
                 );
             }
             if (!rules.extensions.includes(ext)) {
                 return cb(
-                    new Error(`Unsupported file extension "${ext}". Allowed: ${rules.extensions.join(", ")}`)
+                    unsupportedTypeError(
+                        `Unsupported file extension "${ext}". Allowed: ${rules.extensions.join(", ")}`
+                    )
                 );
             }
             cb(null, true);
@@ -95,17 +128,39 @@ const uploadSingle = (fieldName = "file", options = {}) => {
             limits: { fileSize: rules.maxSizeMB * 1024 * 1024 },
         }).single(fieldName);
 
-        upload(req, res, (err) => {
+        upload(req, res, async (err) => {
             if (err) {
-                const message =
-                    err.code === "LIMIT_FILE_SIZE"
-                        ? `File too large. Maximum allowed size is ${rules.maxSizeMB}MB for ${kind} files.`
-                        : err.message || "Upload failed.";
-                return res.status(400).json({ success: false, message });
+                let status = 400;
+                let code = err.code || "UPLOAD_VALIDATION_FAILED";
+                let message = err.message || "Upload failed.";
+
+                if (err.code === "LIMIT_FILE_SIZE") {
+                    status = 413;
+                    code = "FILE_TOO_LARGE";
+                    message = `File too large. Maximum allowed size is ${rules.maxSizeMB}MB for ${kind} files.`;
+                } else if (err.code === "UNSUPPORTED_FILE_TYPE") {
+                    status = 415;
+                    code = "UNSUPPORTED_FILE_TYPE";
+                } else if (err.code === "LIMIT_UNEXPECTED_FILE") {
+                    status = 400;
+                    code = "UNEXPECTED_FILE";
+                    message = `Unexpected file field "${err.field}". The field name must be "${fieldName}".`;
+                } else if (err instanceof multer.MulterError) {
+                    status = 400;
+                }
+
+                console.error(
+                    `[Upload] ${status} ${req.method} ${req.originalUrl} :: ${message} (code=${code})`
+                );
+                return res.status(status).json({ success: false, message, error: code });
             }
+
             if (!req.file) {
-                return res.status(400).json({ success: false, message: "No file was uploaded. Field name must be 'file'." });
+                const message = `No file was uploaded. The field name must be "${fieldName}".`;
+                console.error(`[Upload] 400 ${req.method} ${req.originalUrl} :: ${message}`);
+                return res.status(400).json({ success: false, message, error: "NO_FILE" });
             }
+
             req.uploadedFile = {
                 fieldname: req.file.fieldname,
                 originalname: req.file.originalname,
@@ -118,6 +173,18 @@ const uploadSingle = (fieldName = "file", options = {}) => {
                 // Server-relative URL path persisted in the database, e.g. /uploads/gallery/123-abc.webp
                 url: `/uploads/${folderName}/${req.file.filename}`,
             };
+
+            console.log(
+                `[Upload] stored ${req.uploadedFile.url} (${req.file.size} bytes, ${req.file.mimetype}, folder=${folderName})`
+            );
+
+            // Production durability: Render's filesystem is ephemeral, so also
+            // mirror images into MongoDB. Intentionally NOT awaited so the
+            // upload response is never delayed (or blocked) by the backup —
+            // backupAsset catches all of its own errors internally, so this
+            // cannot produce an unhandled rejection.
+            backupAsset(req.uploadedFile);
+
             next();
         });
     };

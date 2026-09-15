@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { UPLOAD_ROOT } = require("../middleware/multer");
+const { removeAssetBackup } = require("../services/assetStorageService");
 
 /**
  * Delete an uploaded file from disk safely.
@@ -19,6 +20,10 @@ const deleteUploadedFile = (fileRef) => {
         if (!resolved.startsWith(path.resolve(UPLOAD_ROOT))) return;
         if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
             fs.unlinkSync(resolved);
+        }
+        // Also drop the MongoDB durability mirror (best-effort, non-fatal).
+        if (fileRef.startsWith("/uploads/")) {
+            removeAssetBackup(fileRef);
         }
     } catch (err) {
         // Best effort — a missing file must never break a delete/replace request.
