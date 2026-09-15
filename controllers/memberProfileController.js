@@ -351,7 +351,9 @@ exports.createOrUpdateProfile = async (req, res) => {
 exports.updateProfilePicture = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
-    const { profile_picture } = req.body;
+    // `req.body` is parsed by express.json(); the fallback keeps a missing body
+    // from throwing a TypeError (and turning into a 500).
+    const { profile_picture } = req.body || {};
 
     if (profile_picture === undefined || typeof profile_picture !== "string") {
       return res.status(400).json({
@@ -375,21 +377,27 @@ exports.updateProfilePicture = async (req, res) => {
       });
     }
 
+    // Update the existing profile document only. An upsert is intentionally NOT
+    // used: MemberProfile has many required business fields, so creating a
+    // partial document here would either fail validation or leave an invalid
+    // profile behind. If the member has not created a profile yet, the picture
+    // is still stored on the User record and `createOrUpdateProfile` will pick
+    // up the same reference (which is read from the request) on first save.
     const savedProfile = await MemberProfile.findOneAndUpdate(
       { user: userId },
-      { profile_picture: reference },
-      { new: true, upsert: true, runValidators: true }
+      { $set: { profile_picture: reference } },
+      { new: true }
     );
 
     // Mirror onto the User record so every existing avatar resolver stays
     // consistent with the member profile document.
-    await User.findByIdAndUpdate(userId, { image: reference });
+    await User.findByIdAndUpdate(userId, { $set: { image: reference } });
 
     return res.status(200).json({
       success: true,
       message: isClear ? "Profile picture removed" : "Profile picture saved",
       data: {
-        profile_picture: savedProfile ? savedProfile.profile_picture || "" : "",
+        profile_picture: savedProfile ? savedProfile.profile_picture || "" : reference,
       },
     });
   } catch (error) {

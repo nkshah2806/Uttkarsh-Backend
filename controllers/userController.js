@@ -592,7 +592,11 @@ exports.uploadProfileImage = async (req, res) => {
       return res.status(400).json({ success: false, message: "No image was uploaded. Field name must be 'profileImage'." });
     }
 
-    const targetId = req.body.userId || req.body.id || req.user?._id;
+    // `req.body` is populated by the multer middleware that runs before this
+    // handler; the fallbacks keep the handler safe (no TypeError -> 500) if a
+    // request ever reaches it with an empty/undefined body.
+    const body = req.body || {};
+    const targetId = body.userId || body.id || req.user?._id;
     if (!targetId) {
       // Still clean up the orphan file so it never lingers on disk.
       deleteUploadedFile(file.url);
@@ -613,15 +617,32 @@ exports.uploadProfileImage = async (req, res) => {
     }
 
     const previousImage = user.image;
-    user.image = file.url;
-    await user.save();
+
+    // IMPORTANT: update ONLY the `image` path with an atomic update.
+    //
+    // `req.user` is loaded by the `protect` middleware with `.select("-password")`,
+    // so the in-memory document has no `password` value. Calling `user.save()`
+    // re-runs full document validation and fails the required `password` path
+    // ("Path `password` is required."), which surfaced as a 500 error. Using
+    // `$set` on a single field avoids validating untouched required paths and
+    // also cannot overwrite concurrent changes to other fields.
+    const updatedUser = await User.findByIdAndUpdate(
+      user._id,
+      { $set: { image: file.url } },
+      { new: true, runValidators: false }
+    ).select("-password");
+
+    if (!updatedUser) {
+      deleteUploadedFile(file.url);
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
 
     // Safe replacement: remove the old file only after the new one is saved.
     if (previousImage && previousImage !== file.url && previousImage.startsWith("/uploads/")) {
       deleteUploadedFile(previousImage);
     }
 
-    const userResponse = normalizeUserForResponse(user);
+    const userResponse = normalizeUserForResponse(updatedUser);
     return res.status(200).json({
       success: true,
       message: "Profile picture updated successfully",
@@ -629,6 +650,9 @@ exports.uploadProfileImage = async (req, res) => {
       user: userResponse,
     });
   } catch (error) {
+    // Log the real (server-side) cause so a failure here is diagnosable, while
+    // still returning a clean client-facing message.
+    console.error("[uploadProfileImage] failed:", error.message);
     return res.status(500).json({ success: false, message: "Failed to upload profile picture", error: error.message });
   }
 };
