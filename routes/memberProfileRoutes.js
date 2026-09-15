@@ -10,6 +10,10 @@ router.get("/", memberProfileController.getMemberProfile);
 router.post("/", memberProfileController.createOrUpdateProfile);
 router.put("/", memberProfileController.createOrUpdateProfile);
 
+// Persist an already-uploaded profile picture reference (the file itself is
+// uploaded via POST /api/user/uploadProfileImage).
+router.post("/picture", memberProfileController.updateProfilePicture);
+
 // ---------------------------------------------------------------------------
 // Admin-only endpoints for the member profile approval workflow.
 // Mounted under /api/member/profile so the URLs become:

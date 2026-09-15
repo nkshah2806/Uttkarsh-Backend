@@ -674,6 +674,22 @@ exports.approveUser = async (req, res) => {
       return res.status(400).json({ success: false, message: "Admin accounts do not require approval" });
     }
 
+    // Business rule (server-enforced): a franchise member may only be approved
+    // after their profile is fully completed. Checking this here means a direct
+    // API call can never bypass the disabled approve button in the Admin UI.
+    const memberProfile = await MemberProfile.findOne({ user: user._id });
+    if (!memberProfile || memberProfile.profile_completed !== true) {
+      return res.status(400).json({
+        success: false,
+        message: "Profile must be completed before approval",
+        error: "PROFILE_INCOMPLETE",
+        data: {
+          profile_completed: Boolean(memberProfile && memberProfile.profile_completed),
+          completion_percentage: memberProfile ? memberProfile.completion_percentage || 0 : 0,
+        },
+      });
+    }
+
     user.approval_status = "approved";
     user.isActive = true;
     user.updatedBy = req.user?._id || req.user?.id || null;

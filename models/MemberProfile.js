@@ -132,6 +132,16 @@ const memberProfileSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // Member profile picture.
+    // Stored as the server-relative reference returned by the shared upload
+    // architecture (e.g. "/uploads/users/<file>"), so existing image
+    // resolution helpers on both the member and admin panels keep working.
+    profile_picture: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     // Profile Completion & Status
     profile_completed: {
       type: Boolean,

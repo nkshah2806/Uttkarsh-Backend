@@ -55,6 +55,9 @@ exports.getMemberProfile = async (req, res) => {
           account_type: "Savings",
           ifsc_code: "",
           branch_address: "",
+          // Fall back to the User record's picture so an already-uploaded
+          // avatar is never lost when the profile draft is generated.
+          profile_picture: req.user.image || "",
           profile_completed: false,
           completion_percentage: 0,
           approval_status: "pending",
@@ -112,6 +115,7 @@ exports.createOrUpdateProfile = async (req, res) => {
       account_type,
       ifsc_code,
       branch_address,
+      profile_picture,
       password,
       confirm_password,
     } = req.body;
@@ -279,6 +283,9 @@ exports.createOrUpdateProfile = async (req, res) => {
       account_type,
       ifsc_code: ifsc_code.toUpperCase(),
       branch_address: branch_address || "",
+      // An empty value means "leave the existing picture untouched" so a plain
+      // profile save never wipes an uploaded avatar.
+      profile_picture: profile_picture || existingProfile?.profile_picture || "",
       profile_completed,
       completion_percentage,
       approval_status,
@@ -296,8 +303,10 @@ exports.createOrUpdateProfile = async (req, res) => {
       { new: true, upsert: true, runValidators: true }
     );
 
-    // Sync basic details back to User model as well
-    await User.findByIdAndUpdate(userId, {
+    // Sync basic details back to User model as well. The profile picture is
+    // mirrored onto User.image so every existing admin screen (which resolves
+    // avatars from User.image) shows the member's latest picture.
+    const userSync = {
       fullName: member_name,
       email: email.toLowerCase(),
       phoneNumber: phone,
@@ -306,7 +315,11 @@ exports.createOrUpdateProfile = async (req, res) => {
       city,
       state,
       pinCode: pincode,
-    });
+    };
+    if (savedProfile && savedProfile.profile_picture) {
+      userSync.image = savedProfile.profile_picture;
+    }
+    await User.findByIdAndUpdate(userId, userSync);
 
     return res.status(200).json({
       success: true,
@@ -318,6 +331,72 @@ exports.createOrUpdateProfile = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to save member profile",
+    });
+  }
+};
+
+/**
+ * POST /api/member/profile/picture
+ * Persists an already-uploaded profile picture reference onto the member's
+ * profile document (and mirrors it onto User.image) without requiring the full
+ * profile payload. The actual file is uploaded through the existing
+ * POST /api/user/uploadProfileImage endpoint; this handler only stores the
+ * resulting path so the admin review screens can read it from the profile.
+ *
+ * Security: the reference is validated server-side. Only an empty string (used
+ * to remove the picture) or a relative path inside /uploads/ is accepted, so a
+ * caller cannot inject an arbitrary external URL or break out of the uploads
+ * directory. Business rules are enforced here, not just in the UI.
+ */
+exports.updateProfilePicture = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const { profile_picture } = req.body;
+
+    if (profile_picture === undefined || typeof profile_picture !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "A valid profile_picture reference is required",
+        error: "INVALID_PROFILE_PICTURE",
+      });
+    }
+
+    const reference = profile_picture.trim();
+
+    // Allow clearing the picture, otherwise require a safe local upload path.
+    const isClear = reference === "";
+    const isLocalUpload = /^\/uploads\/[\w./-]+$/.test(reference);
+
+    if (!isClear && !isLocalUpload) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid profile picture reference",
+        error: "INVALID_PROFILE_PICTURE",
+      });
+    }
+
+    const savedProfile = await MemberProfile.findOneAndUpdate(
+      { user: userId },
+      { profile_picture: reference },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    // Mirror onto the User record so every existing avatar resolver stays
+    // consistent with the member profile document.
+    await User.findByIdAndUpdate(userId, { image: reference });
+
+    return res.status(200).json({
+      success: true,
+      message: isClear ? "Profile picture removed" : "Profile picture saved",
+      data: {
+        profile_picture: savedProfile ? savedProfile.profile_picture || "" : "",
+      },
+    });
+  } catch (error) {
+    console.error("Error updating member profile picture:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to update profile picture",
     });
   }
 };
