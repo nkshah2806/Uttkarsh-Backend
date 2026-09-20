@@ -3,6 +3,7 @@ const User = require("../models/User");
 const MemberProfile = require("../models/MemberProfile");
 const passwordCryptoService = require("../services/passwordCryptoService");
 const { deleteUploadedFile } = require("./uploadController");
+const whatsappService = require("../services/whatsappService");
 
 // ---------------------------------------------------------------------------
 // Phone number helpers
@@ -48,6 +49,67 @@ const generateToken = (user) => {
     process.env.JWT_SECRET,
     { expiresIn: "1d" }
   );
+};
+
+// ---------------------------------------------------------------------------
+// WhatsApp Welcome Message — fire-and-forget helper
+// ---------------------------------------------------------------------------
+// Called once after a new member record is created. Never throws; any failure
+// is logged server-side and recorded on the user document without affecting
+// the registration API response.
+//
+// Idempotency: if `whatsappWelcomeStatus` is already "sent" the function
+// returns immediately, preventing duplicate messages on retried requests.
+const sendWelcomeWhatsAppMessage = async (user) => {
+  try {
+    // Guard: skip if already sent (idempotency for retried registrations)
+    if (user.whatsappWelcomeStatus === "sent") {
+      console.log(`[WhatsApp] Welcome message already sent for user ${user._id}. Skipping.`);
+      return;
+    }
+
+    const rawPhone = user.mobileNumber || user.phoneNumber || "";
+    if (!rawPhone) {
+      console.log(`[WhatsApp] No phone number on user ${user._id}. Skipping welcome message.`);
+      await User.findByIdAndUpdate(
+        user._id,
+        { $set: { whatsappWelcomeStatus: "failed", whatsappWelcomeSentAt: new Date() } },
+        { runValidators: false }
+      );
+      return;
+    }
+
+    const result = await whatsappService.sendWelcomeMessage({
+      memberName: user.fullName || "Member",
+      mobileNumber: rawPhone,
+    });
+
+    // Atomically persist the outcome so a server restart / retry cannot re-send
+    await User.findByIdAndUpdate(
+      user._id,
+      {
+        $set: {
+          whatsappWelcomeStatus: result.success ? "sent" : "failed",
+          whatsappWelcomeSentAt: new Date(),
+          whatsappMessageId: result.messageId || "",
+        },
+      },
+      { runValidators: false }
+    );
+  } catch (err) {
+    // Last-resort catch — should never be reached due to whatsappService's own
+    // internal error handling, but kept as a safety net.
+    console.error(`[WhatsApp] Unexpected error in sendWelcomeWhatsAppMessage: ${err.message}`);
+    try {
+      await User.findByIdAndUpdate(
+        user._id,
+        { $set: { whatsappWelcomeStatus: "failed", whatsappWelcomeSentAt: new Date() } },
+        { runValidators: false }
+      );
+    } catch (_) {
+      // Ignore DB update failure — do not let it propagate
+    }
+  }
 };
 
 const normalizeUserForResponse = (user, token) => {
@@ -313,16 +375,24 @@ exports.registerUser = async (req, res) => {
     const token = generateToken(user);
     const userResponse = normalizeUserForResponse(user, token);
 
+    // Respond immediately — do NOT await WhatsApp delivery so the API is fast
+    // and registration never fails due to WhatsApp issues.
     res.status(201).json({
       success: true,
       message:
-        "Registration successful. You can now log in and complete your personal details. Full access is granted after admin approval.",
+        "Registration successful. You can now log in and complete your personal details. " +
+        "A welcome message will be sent to your registered WhatsApp number, if available. " +
+        "Full access is granted after admin approval.",
       token,
       jwtToken: token,
       user: userResponse,
       member: userResponse,
       data: userResponse,
     });
+
+    // Fire-and-forget: WhatsApp welcome message sent AFTER the response is
+    // already on its way to the client. Errors are logged but never thrown.
+    sendWelcomeWhatsAppMessage(user).catch(() => {});
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({ success: false, message: "Email or phone number already exists" });

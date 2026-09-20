@@ -144,6 +144,33 @@ const userSchema = new mongoose.Schema(
       default: "",
       select: false,
     },
+
+    // ---------------------------------------------------------------------------
+    // WhatsApp Welcome Message tracking
+    // ---------------------------------------------------------------------------
+    // Tracks the delivery state of the automatic welcome message sent after a
+    // new member registers. Used to prevent duplicate sends on retries and to
+    // surface delivery status in the admin panel.
+    //
+    // States:
+    //   "pending"  — not yet attempted (default for all new registrations)
+    //   "sent"     — Meta Cloud API accepted the message (no duplicate will be sent)
+    //   "failed"   — API call was attempted but failed (registration unaffected)
+    whatsappWelcomeStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+      default: "pending",
+    },
+    // Timestamp of the successful or last-attempted send.
+    whatsappWelcomeSentAt: {
+      type: Date,
+      default: null,
+    },
+    // The `wamid` message ID returned by Meta on success; empty otherwise.
+    whatsappMessageId: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,
