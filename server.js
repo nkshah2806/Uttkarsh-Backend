@@ -36,6 +36,8 @@ const scanPricingRoutes = require("./routes/scanPricingRoutes");
 const galleryRoutes = require("./routes/galleryRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const translationRoutes = require("./routes/translationRoutes");
+const whatsAppRoutes = require("./routes/whatsAppRoutes");
+const whatsAppService = require("./services/whatsAppService");
 const { restoreAsset } = require("./services/assetStorageService");
 
 const app = express();
@@ -84,6 +86,7 @@ app.use("/api/health-camps", healthCampRoutes);
 app.use("/api/gallery", galleryRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/translate", translationRoutes);
+app.use("/api/whatsapp", whatsAppRoutes);
 
 // Dashboard Routes
 app.use("/api/dashboard", dashboardRoutes);
@@ -106,6 +109,7 @@ const connectDB = async () => {
 
     app.listen(PORT, () => {
       console.log(`✅ Server running on port ${PORT}`);
+      whatsAppService.validateConfig();
     });
   } catch (error) {
     console.error("❌ MongoDB Connection Error:");
