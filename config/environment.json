@@ -7,6 +7,5 @@
   "SERVICE": "Gmail",
   "emailPORT": 465,
   "AUTHUSER": "b1aa02001@smtp-brevo.com",
-  "AUTHPASSWORD": "0jZr69GhLUBMxIkc",
-  "WHATSAPP_WEBHOOK_VERIFY_TOKEN": "uttkarsh_whatsapp_webhook_2024_secure_token"
+  "AUTHPASSWORD": "0jZr69GhLUBMxIkc"
 }

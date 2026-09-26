@@ -2,7 +2,6 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const MemberProfile = require("../models/MemberProfile");
 const passwordCryptoService = require("../services/passwordCryptoService");
-const whatsAppService = require("../services/whatsAppService");
 const { deleteUploadedFile } = require("./uploadController");
 
 // ---------------------------------------------------------------------------
@@ -314,44 +313,10 @@ exports.registerUser = async (req, res) => {
     const token = generateToken(user);
     const userResponse = normalizeUserForResponse(user, token);
 
-    let whatsappMessageSent = false;
-
-    // Send WhatsApp welcome notification via Meta WhatsApp Cloud API
-    if (resolvedPhone) {
-      try {
-        const waResult = await whatsAppService.sendRegistrationWelcomeMessage({
-          phoneNumber: resolvedPhone,
-          userName: resolvedFullName,
-        });
-
-        if (waResult && waResult.success) {
-          whatsappMessageSent = true;
-          await User.findByIdAndUpdate(user._id, {
-            whatsappWelcomeSent: true,
-            whatsappWelcomeStatus: "sent",
-            whatsappWelcomeSentAt: new Date(),
-            whatsappMessageId: waResult.messageId || "",
-          }).catch(() => {});
-        } else {
-          await User.findByIdAndUpdate(user._id, {
-            whatsappWelcomeSent: false,
-            whatsappWelcomeStatus: "failed",
-          }).catch(() => {});
-        }
-      } catch (waErr) {
-        console.error("[WhatsApp] Error sending registration welcome message:", waErr.message);
-        await User.findByIdAndUpdate(user._id, {
-          whatsappWelcomeSent: false,
-          whatsappWelcomeStatus: "failed",
-        }).catch(() => {});
-      }
-    }
-
     res.status(201).json({
       success: true,
       message:
         "Registration successful. You can now log in and complete your personal details. Full access is granted after admin approval.",
-      whatsappMessageSent,
       token,
       jwtToken: token,
       user: userResponse,
@@ -450,41 +415,7 @@ exports.createUser = async (req, res) => {
     });
 
     const userResponse = normalizeUserForResponse(user);
-
-    let whatsappMessageSent = false;
-
-    // Send WhatsApp welcome notification via Meta WhatsApp Cloud API
-    if (resolvedPhone) {
-      try {
-        const waResult = await whatsAppService.sendRegistrationWelcomeMessage({
-          phoneNumber: resolvedPhone,
-          userName: resolvedFullName,
-        });
-
-        if (waResult && waResult.success) {
-          whatsappMessageSent = true;
-          await User.findByIdAndUpdate(user._id, {
-            whatsappWelcomeSent: true,
-            whatsappWelcomeStatus: "sent",
-            whatsappWelcomeSentAt: new Date(),
-            whatsappMessageId: waResult.messageId || "",
-          }).catch(() => {});
-        } else {
-          await User.findByIdAndUpdate(user._id, {
-            whatsappWelcomeSent: false,
-            whatsappWelcomeStatus: "failed",
-          }).catch(() => {});
-        }
-      } catch (waErr) {
-        console.error("[WhatsApp] Error sending user creation welcome message:", waErr.message);
-        await User.findByIdAndUpdate(user._id, {
-          whatsappWelcomeSent: false,
-          whatsappWelcomeStatus: "failed",
-        }).catch(() => {});
-      }
-    }
-
-    res.status(201).json({ success: true, whatsappMessageSent, data: userResponse });
+    res.status(201).json({ success: true, data: userResponse });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({ success: false, message: "Email or phone number already exists" });

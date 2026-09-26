@@ -144,24 +144,6 @@ const userSchema = new mongoose.Schema(
       default: "",
       select: false,
     },
-    // WhatsApp welcome notification delivery tracking
-    whatsappWelcomeSent: {
-      type: Boolean,
-      default: false,
-    },
-    whatsappWelcomeStatus: {
-      type: String,
-      enum: ["pending", "sent", "failed", "skipped"],
-      default: "pending",
-    },
-    whatsappWelcomeSentAt: {
-      type: Date,
-      default: null,
-    },
-    whatsappMessageId: {
-      type: String,
-      default: "",
-    },
   },
   {
     timestamps: true,
