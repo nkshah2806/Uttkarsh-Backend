@@ -32,6 +32,8 @@ router.post("/uploadProfileImage", protect, uploadSingle("profileImage", { folde
 // getUserById and updateUser allow admins, or a member acting on their own
 // record (e.g. language preference persistence in the member panel).
 router.get("/", protect, getUsers);
+// Alias so endpoints like /api/admin/members resolve cleanly instead of matching /:id
+router.get("/members", protect, getUsers);
 // Admin-only: decrypt and return the member's portal login password.
 // MUST be declared before the generic `/:id` route so `:id` does not match it.
 router.get("/:id/portal-password", protect, adminOnly, getMemberPortalPassword);

@@ -509,6 +509,7 @@ exports.updateUser = async (req, res) => {
       "deviceName",
       "fcmToken",
       "isAdmin",
+      "role",
       "jwtToken",
       "otp",
       "otpExpiresAt",
@@ -532,12 +533,13 @@ exports.updateUser = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    // Only admins may change account status fields. Members must NOT be able
-    // to approve themselves or reactivate their own deactivated account.
+    // Only admins may change account status / role / approval fields.
     if (!isAdminUser) {
       delete updateData.isActive;
       delete updateData.approval_status;
       delete updateData.isAdmin;
+      delete updateData.role;
+      delete updateData.isVerified;
     }
 
     if (req.body.name && !updateData.fullName) {
@@ -549,6 +551,22 @@ exports.updateUser = async (req, res) => {
     if (req.body.phone && !updateData.phoneNumber) {
       updateData.phoneNumber = req.body.phone;
       updateData.mobileNumber = req.body.phone;
+    }
+
+    // Don't overwrite existing password if password was empty or just whitespace
+    if (updateData.password !== undefined) {
+      if (typeof updateData.password === "string" && updateData.password.trim().length >= 6) {
+        updateData.password = updateData.password.trim();
+      } else {
+        delete updateData.password;
+      }
+    }
+
+    // Synchronize role and isAdmin flags
+    if (updateData.role !== undefined) {
+      updateData.isAdmin = updateData.role === "ADMIN" || updateData.role === "SUPER_ADMIN";
+    } else if (updateData.isAdmin !== undefined) {
+      updateData.role = updateData.isAdmin ? "ADMIN" : "FRANCHISE";
     }
 
     const user = await User.findById(targetId);
@@ -567,8 +585,71 @@ exports.updateUser = async (req, res) => {
 
     await user.save();
 
+    // If approval status changed, synchronize the linked MemberProfile
+    if (updateData.approval_status !== undefined) {
+      await MemberProfile.updateOne(
+        { user: user._id },
+        {
+          $set: {
+            approval_status: updateData.approval_status,
+            ...(updateData.approval_status === "approved"
+              ? { reviewed_by: req.user?._id || null, reviewed_at: new Date() }
+              : {}),
+          },
+        }
+      );
+    }
+
+    // Also synchronize MemberProfile basic personal fields if updated
+    const profileSync = {};
+    if (updateData.fullName) profileSync.member_name = updateData.fullName;
+    if (updateData.email) profileSync.email = updateData.email;
+    if (updateData.phoneNumber || updateData.mobileNumber) {
+      profileSync.phone = updateData.phoneNumber || updateData.mobileNumber;
+    }
+    if (updateData.address) profileSync.address = updateData.address;
+    if (updateData.city) profileSync.city = updateData.city;
+    if (updateData.state) profileSync.state = updateData.state;
+    if (updateData.pinCode) profileSync.pincode = updateData.pinCode;
+
+    // Support updating linked franchise profile fields if provided by admin
+    if (req.body.franchiseProfile && typeof req.body.franchiseProfile === "object") {
+      const allowedProfileFields = [
+        "member_name",
+        "branch_name",
+        "store_name",
+        "franchise_type",
+        "under_group",
+        "franchise_code",
+        "contact_person",
+        "phone",
+        "email",
+        "address",
+        "state",
+        "city",
+        "district",
+        "area",
+        "pincode",
+        "account_name",
+        "bank_name",
+        "account_number",
+        "account_type",
+        "ifsc_code",
+        "branch_address",
+      ];
+      allowedProfileFields.forEach((f) => {
+        if (req.body.franchiseProfile[f] !== undefined) {
+          profileSync[f] = req.body.franchiseProfile[f];
+        }
+      });
+    }
+
+    if (Object.keys(profileSync).length > 0) {
+      await MemberProfile.updateOne({ user: user._id }, { $set: profileSync });
+    }
+
     const userResponse = normalizeUserForResponse(user);
-    res.status(200).json({ success: true, data: userResponse, user: userResponse });
+    res.status(200).json({ success: true, message: "User updated successfully", data: userResponse, user: userResponse });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({ success: false, message: "Email or phone number already exists" });
@@ -686,18 +767,38 @@ exports.uploadProfileImage = async (req, res) => {
 
 exports.deleteUser = async (req, res) => {
   try {
-    const targetId = req.params.id || req.body.id;
+    const targetId = req.params.id || req.body.id || req.body.userId;
+
+    if (!targetId) {
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    // Safety guard: prevent admin from accidentally deleting their own logged-in account
+    if (req.user && String(req.user._id) === String(targetId)) {
+      return res.status(400).json({ success: false, message: "You cannot delete your own admin account." });
+    }
+
     const user = await User.findByIdAndDelete(targetId);
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // Remove the linked MemberProfile as well, so a member who re-registers
-    // with the same phone number / email is not blocked by an orphaned profile.
-    await MemberProfile.deleteOne({ user: user._id });
+    // Clean up uploaded user image from disk if present
+    if (user.image && typeof user.image === "string" && user.image.startsWith("/uploads/")) {
+      deleteUploadedFile(user.image);
+    }
 
-    res.status(200).json({ success: true, message: "User deleted successfully" });
+    // Remove the linked MemberProfile as well, and delete any uploaded profile picture
+    const linkedProfile = await MemberProfile.findOne({ user: user._id });
+    if (linkedProfile) {
+      if (linkedProfile.profile_picture && linkedProfile.profile_picture.startsWith("/uploads/")) {
+        deleteUploadedFile(linkedProfile.profile_picture);
+      }
+      await MemberProfile.deleteOne({ _id: linkedProfile._id });
+    }
+
+    res.status(200).json({ success: true, message: "User permanently deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to delete user", error: error.message });
   }
