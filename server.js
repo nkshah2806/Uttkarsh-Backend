@@ -42,8 +42,8 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Serve uploaded media (images/videos) as static files.
 // Files are stored under <project>/uploads and referenced in the database as

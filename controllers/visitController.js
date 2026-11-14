@@ -153,7 +153,7 @@ exports.saveVisitResults = async (req, res) => {
     const ownedVisit = await loadOwnedVisit(req, res);
     if (!ownedVisit) return;
 
-    const { results } = req.body; // array of { parameter_id, raw_value }
+    const { results, is_draft, status } = req.body; // array of { parameter_id, raw_value }
     if (!Array.isArray(results)) {
       return res.status(400).json({ success: false, message: "results must be an array" });
     }
@@ -180,9 +180,28 @@ exports.saveVisitResults = async (req, res) => {
     });
 
     await VisitParameterResult.bulkWrite(bulkOps);
-    await Visit.findByIdAndUpdate(req.params.id, { status: "REPORT_READY" });
 
-    return res.json({ success: true, message: "Parameter results saved successfully" });
+    // Determine visit status:
+    // - Draft saves keep "DATA_ENTRY" so the scan can be continued where left off
+    // - Explicit status takes precedence
+    // - If visit was already generated ("SHARED"), keep "SHARED"
+    // - Otherwise transition to "REPORT_READY"
+    let nextStatus = "REPORT_READY";
+    if (is_draft) {
+      nextStatus = "DATA_ENTRY";
+    } else if (status) {
+      nextStatus = status;
+    } else if (ownedVisit.status === "SHARED") {
+      nextStatus = "SHARED";
+    }
+
+    await Visit.findByIdAndUpdate(req.params.id, { status: nextStatus });
+
+    return res.json({
+      success: true,
+      message: is_draft ? "Progress saved as draft" : "Parameter results saved successfully",
+      status: nextStatus,
+    });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });
   }
@@ -449,17 +468,33 @@ exports.generatePDF = async (req, res) => {
     // Snapshot the report price (amount + payment status) confirmed at the
     // "Generate Final Report" step onto this Report document so each generated
     // report keeps the exact amount it was charged for.
+    // If a report already exists for this visit (e.g. edited and regenerated),
+    // update it rather than creating duplicate records.
     const pricingSnapshot = ownedVisit.scan_pricing || {};
     const rawAmount = Number(pricingSnapshot.amount);
-    const report = await Report.create({
-      visit_id: req.params.id,
-      language: selectedLang,
-      generated_by: req.user._id,
-      amount: Number.isFinite(rawAmount) && rawAmount >= 0 ? rawAmount : 0,
-      payment_status: pricingSnapshot.payment_status || "",
-      payment_method: pricingSnapshot.payment_method || "",
-      transaction_id: pricingSnapshot.transaction_id || "",
-    });
+    const resolvedAmount = Number.isFinite(rawAmount) && rawAmount >= 0 ? rawAmount : 0;
+
+    let report = await Report.findOne({ visit_id: req.params.id }).sort({ createdAt: -1 });
+    if (report) {
+      report.language = selectedLang;
+      report.generated_by = req.user._id;
+      report.amount = resolvedAmount;
+      report.payment_status = pricingSnapshot.payment_status || report.payment_status || "";
+      report.payment_method = pricingSnapshot.payment_method || report.payment_method || "";
+      report.transaction_id = pricingSnapshot.transaction_id || report.transaction_id || "";
+      report.generated_at = new Date();
+      await report.save();
+    } else {
+      report = await Report.create({
+        visit_id: req.params.id,
+        language: selectedLang,
+        generated_by: req.user._id,
+        amount: resolvedAmount,
+        payment_status: pricingSnapshot.payment_status || "",
+        payment_method: pricingSnapshot.payment_method || "",
+        transaction_id: pricingSnapshot.transaction_id || "",
+      });
+    }
 
     await Visit.findByIdAndUpdate(req.params.id, { status: "SHARED" });
 
